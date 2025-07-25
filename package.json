@@ -1,0 +1,44 @@
+{
+  "name": "modbus-webserial",
+  "version": "0.1.0-alpha.0",
+  "description": "Tiny TypeScript library for speaking Modbus-RTU from the browser via Web Serial",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "prepublishOnly": "npm run build && npm test",
+    "test": "vitest"
+  },
+  "repository": "git+https://github.com/anttikotajarvi/modbus-webserial.git",
+  "keywords": [
+    "modbus",
+    "rtu",
+    "webserial",
+    "browser",
+    "typescript"
+  ],
+  "author": "Antti Kotajärvi <antti.kotajarvi@hotmail.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/w3c-web-serial": "^1",
+    "tsup": "^8",
+    "typescript": "^5",
+    "vitest": "^1"
+  }
+}
