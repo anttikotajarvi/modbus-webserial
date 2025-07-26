@@ -1,8 +1,23 @@
 {
   "name": "modbus-webserial",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "Tiny TypeScript library for speaking Modbus-RTU from the browser via Web Serial",
   "type": "module",
+  "author": "Antti Kotajärvi <antti.kotajarvi@hotmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anttikotajarvi/modbus-webserial.git"
+  },
+  "homepage": "https://github.com/anttikotajarvi/modbus-webserial#readme",
+  "keywords": [
+    "modbus",
+    "rtu",
+    "webserial",
+    "browser",
+    "typescript"
+  ],
+  
   "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -22,16 +37,6 @@
     "prepublishOnly": "npm run build && npm test",
     "test": "vitest"
   },
-  "repository": "git+https://github.com/anttikotajarvi/modbus-webserial.git",
-  "keywords": [
-    "modbus",
-    "rtu",
-    "webserial",
-    "browser",
-    "typescript"
-  ],
-  "author": "Antti Kotajärvi <antti.kotajarvi@hotmail.com>",
-  "license": "MIT",
   "engines": {
     "node": ">=18"
   },
