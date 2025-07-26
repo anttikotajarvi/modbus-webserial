@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { crc16 } from '../src/core/crc16.js';
 
+// This is already implicitly tested in other tests but we keep it for clarity
 describe('crc16', () => {
   it('matches known Modbus test vector', () => {
     // Example vector: 01 03 00 00 00 0A  (id=1, fc=3, addr=0, len=10)

@@ -15,6 +15,9 @@ export class WebSerialTransport {
   private writer!: WritableStreamDefaultWriter<Uint8Array>;
   private timeout = 500;
 
+  setTimeout(ms: number) { this.timeout = ms; }
+  getTimeout() { return this.timeout; }
+
   static async open(opts: WebSerialOptions = {}): Promise<WebSerialTransport> {
     const t = new WebSerialTransport();
     await t.init(opts);
