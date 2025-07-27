@@ -1,0 +1,30 @@
+name: CI
+
+# run for commits to main + pull-requests
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  node-test:
+    runs-on: ubuntu-latest          # free Linux runner
+
+    steps:
+      # 1. checkout repo
+      - uses: actions/checkout@v4
+
+      # 2. set up Node
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # 3. install dependencies
+      - run: npm ci
+
+      # 4. build, lint, type-check, test – exactly your local scripts
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test               # vitest run
