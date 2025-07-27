@@ -88,10 +88,9 @@ export class ModbusRTU {
   }
 
   /** FC 16 – multiple holding registers */
-  async writeRegisters(addr: number, values: number[] | Buffer): Promise<WriteMultipleResult> {
-    if (values instanceof Buffer) values = Array.from(values.values());
-    const raw = await this.transport.transact(buildWriteMultiple(this.id, addr, values as number[]));
-    const length = (values as number[]).length;
+  async writeRegisters(addr: number, values: number[]): Promise<WriteMultipleResult> {
+    const raw = await this.transport.transact(buildWriteMultiple(this.id, addr, values));
+    const length = values.length;
     return { address: addr, length, raw };
   }
 
