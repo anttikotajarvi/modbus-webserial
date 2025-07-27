@@ -1,6 +1,6 @@
  # modbus-webserial v0.9.0
 ![npm](https://img.shields.io/npm/v/modbus-webserial)
-![license](https://img.shields.io/github/license/yourUser/modbus-webserial)
+![license](https://img.shields.io/github/license/anttikotajarvi/modbus-webserial)
 ![CI](https://github.com/anttikotajarvi/modbus-webserial/actions/workflows/ci.yml/badge.svg)
 ![types](https://img.shields.io/npm/types/modbus-webserial)
 ![size](https://img.shields.io/bundlephobia/minzip/modbus-webserial)
