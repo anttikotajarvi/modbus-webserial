@@ -1,6 +1,6 @@
 {
   "name": "modbus-webserial",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "description": "Tiny TypeScript library for speaking Modbus-RTU from the browser via Web Serial",
   "type": "module",
   "author": "Antti Kotajärvi <antti.kotajarvi@hotmail.com>",
@@ -33,17 +33,28 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
-    "prepublishOnly": "npm run build && npm test",
-    "test": "vitest"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "serve:examples": "npx serve examples",
+    "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "clean": "rimraf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build && npm run typecheck && npm test"
   },
   "engines": {
     "node": ">=18"
   },
   "devDependencies": {
+    "@eslint/js": "^9.32.0",
     "@types/node": "^24.1.0",
-    "@types/w3c-web-serial": "^1",
+    "@types/w3c-web-serial": "^1.0.8",
+    "@typescript-eslint/eslint-plugin": "^8.38.0",
+    "@typescript-eslint/parser": "^8.38.0",
+    "eslint": "^9.32.0",
+    "rimraf": "^6.0.1",
     "tsup": "^8",
     "typescript": "^5",
+    "typescript-eslint": "^8.38.0",
     "vitest": "^1"
   }
 }

@@ -265,14 +265,17 @@ export function parseWriteSingleCoil(resp: Uint8Array): { address: number; state
 // ---------------------------------------------------------------------------
 // Internal utilities
 // ---------------------------------------------------------------------------
-function _parseBits(expectedFC: number): (resp: Uint8Array) => boolean[] {
-  return (resp: Uint8Array) => {
-    basicChecks(resp, expectedFC);               // CRC + FC verify
-    const byteCount = resp[2];
+// Underscore needs to precede the curried parameter or eslint freaks out
+function _parseBits(expectedFC: number): (_frame: Uint8Array) => boolean[] {
+  return (_frame: Uint8Array) => {
+    basicChecks(_frame, expectedFC);
+
+    const byteCount = _frame[2];
     const bits: boolean[] = [];
+
     for (let i = 0; i < byteCount; i++) {
-      const byte = resp[3 + i];
-      for (let j = 0; j < 8; j++) bits.push(!!(byte & (1 << j)));
+      const byte = _frame[3 + i];
+      for (let j = 0; j < 8; j++) bits.push(Boolean(byte & (1 << j)));
     }
     return bits;
   };

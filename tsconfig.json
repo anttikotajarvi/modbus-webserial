@@ -1,0 +1,17 @@
+// please keep this minimal
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "target": "ES2018",
+
+    "lib": ["ES2018", "DOM"],        // DOM for ReadableStream etc.
+    "types": ["node", "w3c-web-serial"],
+
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*"]
+}

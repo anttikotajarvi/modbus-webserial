@@ -46,10 +46,12 @@ export class ModbusRTU {
   }
 
   /** FC 02 – discrete inputs */
-  async readDiscreteInputs(addr: number, qty: number): Promise<ReadCoilResult> {
-    const raw = await this.transport.transact(buildReadDiscreteInputs(this.id, addr, qty));
-    return { data: parseReadDiscreteInputs(raw), raw };
-  }
+async readDiscreteInputs(addr: number, qty: number): Promise<ReadCoilResult> {
+  const raw  = await this.transport.transact(
+                 buildReadDiscreteInputs(this.id, addr, qty));
+  const full = parseReadDiscreteInputs(raw);  // may be up to qty+7
+  return { data: full.slice(0, qty), raw };   // trim padding here
+}
 
   /** FC 03 – holding registers (already existed) */
   async readHoldingRegisters(addr: number, qty: number): Promise<ReadRegisterResult> {

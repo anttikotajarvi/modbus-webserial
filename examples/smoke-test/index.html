@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>modbus-webserial - 64-Register Smoke Test</title>
+<style>
+  body{font-family:system-ui,sans-serif;margin:1.5rem 2rem}
+  button{padding:.4rem .9rem;font-size:1rem;margin-right:.6rem}
+  #status{font-weight:600}
+  #elapsed{font-variant-numeric:tabular-nums}
+  #errors{border:1px solid #c33;background:#fee;padding:.6rem;margin-top:1rem;
+          max-height:9rem;overflow:auto;font-size:.9rem}
+  #plan{background:#f7f7f7;border:1px solid #aaa;padding:.8rem 1rem;margin-top:1rem}
+  ol{margin:.4rem 0 .7rem 1.2rem}
+  .count{font-size:.85rem;color:#0a0;font-weight:600}
+</style>
+</head>
+<body>
+<h1>modbus-webserial / Smoke test (64 words / 64 bits)</h1>
+
+<button id="btnConnect">🔌 Connect</button>
+<button id="btnStart" disabled>Start</button>
+<button id="btnStop"  disabled>Stop</button>
+<span id="status"></span>
+
+<p>Elapsed: <span id="elapsed">0 s</span></p>
+<div id="errors" hidden></div>
+<label style="margin-left:1rem">
+  Delay&nbsp;<input id="delay" type="number" min="10" step="100" value="1000" style="width:5rem"> ms
+</label>
+<div id="plan">
+<strong>Loop interval: <span id="interval">1&nbsp;s</span></strong>
+<ol>
+  <li><b>Holding registers&nbsp;(0&nbsp;–&nbsp;63)</b>
+    &nbsp;&nbsp;<span class="count" id="cnt1">0</span></li>
+
+      &nbsp;&nbsp;• <code>FC&nbsp;16</code> bulk-write <i>64 words</i>&nbsp;0…63<br>
+      &nbsp;&nbsp;• <code>FC&nbsp;03</code> bulk-read verify<br>
+      &nbsp;&nbsp;• <code>FC&nbsp;06</code> single-write each word (reverse order)<br>
+      &nbsp;&nbsp;• <code>FC&nbsp;03</code> read back in&nbsp;8-word chunks verify
+
+  <li><b>Input registers&nbsp;(0&nbsp;–&nbsp;63)</b>
+      &nbsp;&nbsp;<span class="count" id="cnt2">0</span></li>
+
+      &nbsp;&nbsp;• <code>FC&nbsp;04</code> one-shot read all 64<br>
+      &nbsp;&nbsp;• <code>FC&nbsp;04</code> 8-word chunk reads (8&nbsp;×&nbsp;8)<br>
+      &nbsp;&nbsp;• <code>FC&nbsp;04</code> 64 single-word reads (1&nbsp;×&nbsp;64) — compare all three results
+
+  <li><b>Coils&nbsp;(0&nbsp;–&nbsp;63)</b>
+      &nbsp;&nbsp;<span class="count" id="cnt3">0</span></li>
+
+      &nbsp;&nbsp;• <code>FC&nbsp;0F</code> write-multiple T F T F … pattern<br>
+      &nbsp;&nbsp;• <code>FC&nbsp;01</code> bulk-read verify pattern<br>
+      &nbsp;&nbsp;• <code>FC&nbsp;05</code> toggle each coil individually<br>
+      &nbsp;&nbsp;• <code>FC&nbsp;01</code> 8-byte chunk reads verify new pattern
+
+  <li><b>Discrete inputs&nbsp;(0&nbsp;–&nbsp;63)</b>
+      &nbsp;&nbsp;<span class="count" id="cnt4">0</span></li>
+
+      &nbsp;&nbsp;• <code>FC&nbsp;02</code> one-shot read all 64<br>
+      &nbsp;&nbsp;• <code>FC&nbsp;02</code> 8-byte chunk reads (8&nbsp;×&nbsp;8)<br>
+      &nbsp;&nbsp;• <code>FC&nbsp;02</code> 64 single-bit reads — compare all three results
+</ol>
+<b>Errors</b> appear with their sub-step tag (e.g.&nbsp;“3-c”), counters tick after
+each major step completes without error.
+</div>
+<details style="margin-top:1.2rem">
+  <summary style="cursor:pointer;font-weight:600">
+    Example Arduino sketch &nbsp;(ATmega32u4, 64 regs/64 bits)
+  </summary>
+  <pre style="background:#f0f0f0;border:1px solid #bbb;
+              padding:.8rem;overflow:auto;max-height:18rem;font-size:.85rem">
+#include &lt;ModbusRTUSlave.h&gt;
+
+constexpr uint8_t  SLAVE_ID = 1;
+constexpr uint32_t BAUD     = 9600;
+
+/* 64-word / 64-bit data areas */
+uint16_t holdingRegs[64];
+uint16_t inputRegs  [64];
+bool     coils      [64];
+bool     discretes  [64];
+
+ModbusRTUSlave mb(SLAVE_ID);
+
+void setup() {
+  Serial.begin(BAUD);
+  while (!Serial) { }                 // wait for USB-CDC
+
+  mb.configureHoldingRegisters(holdingRegs,  64);
+  mb.configureInputRegisters  (inputRegs,    64);
+  mb.configureCoils           (coils,        64);
+  mb.configureDiscreteInputs  (discretes,    64);
+
+  mb.begin(Serial, BAUD);
+}
+
+void loop() {
+  mb.poll();                          // service Modbus RTU
+}
+  </pre>
+</details>
+<script type="module">
+import { ModbusRTU } from "https://unpkg.com/modbus-webserial@latest/dist/index.js";
+
+// ----------------------------------------------------------------
+// Helpers and globals
+// ----------------------------------------------------------------
+const TOTAL = 64;
+const $  = id => document.getElementById(id);
+const btnC=$('btnConnect'),btnS=$('btnStart'),btnP=$('btnStop');
+const status=$('status'),elapsed=$('elapsed'),errors=$('errors');
+const cnt=[ $('cnt1'), $('cnt2'), $('cnt3'), $('cnt4') ];
+
+let cli=null, timer=null, sec=0, running=false;
+
+const delayInput   = document.getElementById('delay');
+const intervalSpan = document.getElementById('interval');
+
+// show initial value
+intervalSpan.textContent = (delayInput.value / 1000).toFixed(1) + ' s';
+
+// update display when user edits
+delayInput.oninput = () => {
+  const ms = parseInt(delayInput.value, 10) || 1000;
+  intervalSpan.textContent = (ms / 1000).toFixed(1) + ' s';
+};
+
+const setStatus=(t,ok=true)=>{status.textContent=t;status.style.color=ok?'green':'crimson'};
+function logErr(tag,msg){
+  errors.hidden=false;
+  const time=new Date().toLocaleTimeString();
+  errors.innerHTML=`[${time}] <b>${tag}</b> ${msg}<br>`+errors.innerHTML;
+  // cap to 100 lines
+  const lines=errors.innerHTML.split('<br>');
+  if(lines.length>100) errors.innerHTML=lines.slice(0,100).join('<br>');
+}
+
+// ----------------------------------------------------------------
+// Connect to WebSerial
+// ----------------------------------------------------------------
+btnC.onclick=async()=>{
+  try{
+    cli=await ModbusRTU.openWebSerial({ baudRate:9600 });
+    cli.setID(1);
+    setStatus('Connected');
+    btnS.disabled=false;
+    btnC.disabled=true;
+  }catch(e){ setStatus(e.message,false); }
+};
+
+// ----------------------------------------------------------------
+// Start / Stop
+// ----------------------------------------------------------------
+btnS.onclick=()=>{
+  btnS.disabled=true; btnP.disabled=false;
+  errors.innerHTML=''; errors.hidden=true;
+  cnt.forEach(c=>c.textContent='0');
+  sec=0; elapsed.textContent='0 s';
+  timer=setInterval(()=>elapsed.textContent=`${++sec} s`,1000);
+  running=true; runLoop();
+};
+btnP.onclick=()=>{
+  running=false; clearInterval(timer);
+  btnS.disabled=false; btnP.disabled=true;
+  setStatus('Stopped',true);
+};
+
+// ----------------------------------------------------------------
+// Serial loop
+// ----------------------------------------------------------------
+async function runLoop(){
+  while(running){
+    await runOnce().catch(console.error);
+    const ms = parseInt(delayInput.value, 10) || 1000;
+    await new Promise(r => setTimeout(r, ms));
+  }
+}
+
+// ----------------------------------------------------------------
+// Single iteration
+// ----------------------------------------------------------------
+async function runOnce(){
+  let step='?';
+  try{
+    // 1. Holding registers
+    const vals=[...Array(TOTAL).keys()];
+    step='1-a'; await cli.writeRegisters(0,vals);              // FC 16
+    step='1-b'; if(!(await cli.readHoldingRegisters(0,TOTAL)).data.every((v,i)=>v===i))
+                  throw new Error('bulk mismatch');
+    step='1-c'; for(let i=TOTAL-1;i>=0;i--) await cli.writeRegister(i,vals[i]); // FC 06
+    step='1-d'; for(let blk=0;blk<TOTAL/8;blk++){
+                  const {data}=await cli.readHoldingRegisters(blk*8,8);
+                  for(let j=0;j<8;j++) if(data[j]!==blk*8+j) throw new Error(`chunk ${blk}`);
+                }
+    cnt[0].textContent=+cnt[0].textContent+1;
+
+    // 2. Input registers
+    step='2-a'; const IRa=(await cli.readInputRegisters(0,TOTAL)).data;
+    step='2-b'; const IRb=[]; for(let blk=0;blk<TOTAL/8;blk++)
+                  IRb.push(...(await cli.readInputRegisters(blk*8,8)).data);
+    step='2-c'; const IRc=[]; for(let i=0;i<TOTAL;i++)
+                  IRc.push(...(await cli.readInputRegisters(i,1)).data);
+    if(JSON.stringify(IRa)!==JSON.stringify(IRb)||JSON.stringify(IRa)!==JSON.stringify(IRc))
+      throw new Error('IR mismatch');
+    cnt[1].textContent=+cnt[1].textContent+1;
+
+    // 3. Coils
+    const pat=Array.from({length:TOTAL},(_,i)=>!(i&1));
+    step='3-a'; await cli.writeCoils(0,pat);                   // FC 0F
+    step='3-b'; if(JSON.stringify((await cli.readCoils(0,TOTAL)).data)!==JSON.stringify(pat))
+                  throw new Error('coil bulk mismatch');
+    step='3-c'; for(let i=0;i<TOTAL;i++) await cli.writeCoil(i,!pat[i]); // FC 05
+    step='3-d'; const chk=[]; for(let blk=0;blk<TOTAL/8;blk++)
+                  chk.push(...(await cli.readCoils(blk*8,8)).data);
+    if(!chk.every((v,i)=>v===!pat[i])) throw new Error('coil chunk mismatch');
+    cnt[2].textContent=+cnt[2].textContent+1;
+
+    // 4. Discrete inputs
+    step='4-a'; const D0=(await cli.readDiscreteInputs(0,TOTAL)).data;
+    step='4-b'; const D1=[]; for(let blk=0;blk<TOTAL/8;blk++)
+                  D1.push(...(await cli.readDiscreteInputs(blk*8,8)).data);
+    step='4-c'; const D2=[]; for(let i=0;i<TOTAL;i++)
+                  D2.push(...(await cli.readDiscreteInputs(i,1)).data);
+    if(JSON.stringify(D0)!==JSON.stringify(D1)||JSON.stringify(D0)!==JSON.stringify(D2))
+      throw new Error('DI mismatch');
+    cnt[3].textContent=+cnt[3].textContent+1;
+
+  }catch(e){ logErr(step,e.message); }
+}
+</script>
+</body>
+</html>
