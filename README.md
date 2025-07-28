@@ -32,7 +32,7 @@ console.log('HR0=', data[0], 'HR1=', data[1]);
 // Write values to holding registers 0x00 and 0x01
 await client.writeRegisters(0, [0x0A, 0x0B]);
 ```
-**Can also be used *without* WebSerial for building modbus frames in any enviorement**
+**Can also be used *without* WebSerial for building modbus frames in any environment**
 ```javascript
 import {
   buildReadHoldingRegisters,
