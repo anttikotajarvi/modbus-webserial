@@ -17,7 +17,7 @@ npm install modbus-webserial
 ```
 
 ## Usage
-
+**Connect  → read/write in browser**
 ```javascript
 import { ModbusRTU } from 'modbus-webserial';
 
@@ -32,7 +32,25 @@ console.log('HR0=', data[0], 'HR1=', data[1]);
 // Write values to holding registers 0x00 and 0x01
 await client.writeRegisters(0, [0x0A, 0x0B]);
 ```
+**Can also be used *without* WebSerial for building modbus frames in any environment**
+```javascript
+import {
+  buildReadHoldingRegisters,
+  buildWriteRegisters
+} from 'modbus-webserial';
 
+// Build a “Read Holding Registers” frame (ID=1, addr=0, qty=2)
+const rawRead = buildReadHoldingRegisters(1, 0x00, 2);
+console.log(rawRead);
+// → Uint8Array [0x01, 0x03, 0x00, 0x00, 0x00, 0x02, CRC_LO, CRC_HI]
+
+// Build a “Write Multiple Registers” frame (ID=1, addr=0, values=[10,11])
+const rawWrite = buildWriteRegisters(1, 0x00, [0x0A, 0x0B]);
+console.log(rawWrite);
+// → Uint8Array [0x01, 0x10, 0x00, 0x00, 0x00, 0x02, 0x04, 0x00,0x0A, 0x00,0x0B, CRC_LO, CRC_HI]
+```
+> [!TIP]
+> Check `src/index.ts` (or `dist/index.js`) for all exports 
 ## Supported Functions
 
 ### Modbus Data Functions

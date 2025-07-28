@@ -1,6 +1,6 @@
 {
   "name": "modbus-webserial",
-  "version": "0.9.0",
+  "version": "0.9.2",
   "description": "Tiny TypeScript library for speaking Modbus-RTU from the browser via Web Serial",
   "type": "module",
   "author": "Antti Kotajärvi <antti.kotajarvi@hotmail.com>",
@@ -32,7 +32,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts",
+    "build": "tsup src/index.ts --format esm --dts --out-dir dist",
     "test": "vitest run",
     "test:watch": "vitest",
     "serve:examples": "npx serve examples",
