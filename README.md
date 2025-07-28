@@ -50,7 +50,7 @@ console.log(rawWrite);
 // → Uint8Array [0x01, 0x10, 0x00, 0x00, 0x00, 0x02, 0x04, 0x00,0x0A, 0x00,0x0B, CRC_LO, CRC_HI]
 ```
 > [!TIP]
-> Check 'src/index.ts' (or dist/index.js) for all exports 
+> Check `src/index.ts` (or `dist/index.js`) for all exports 
 ## Supported Functions
 
 ### Modbus Data Functions
