@@ -1,6 +1,6 @@
 {
   "name": "modbus-webserial",
-  "version": "0.9.2",
+  "version": "0.10.0",
   "description": "Tiny TypeScript library for speaking Modbus-RTU from the browser via Web Serial",
   "type": "module",
   "author": "Antti Kotajärvi <antti.kotajarvi@hotmail.com>",

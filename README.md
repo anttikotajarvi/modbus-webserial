@@ -91,8 +91,8 @@ The following demos are fully self‑contained HTML files, served via GitHub Pag
   Automated loop testing read/write of 64 registers, coils, and discrete inputs with live counters and error logging.
 
 ## Current state
-
-* **v0.9.0**: Full passing tests, smoke test passed, complete README, build scripts in place
+* **v0.10**: Full modbus data-access coverage
+* **v0.9**: Full passing tests, smoke test passed, complete README, build scripts in place
 * **Beta**: Full Modbus RTU function‑code coverage
 * **Alpha**: Basic structure and layout
 
