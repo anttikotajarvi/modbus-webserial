@@ -67,7 +67,13 @@ The following Modbus-RTU function calls are implemented:
 | `writeRegister(addr, value)`      | FC 06 – Write single holding register    |
 | `writeCoils(addr, states)`        | FC 15 – Write multiple coils             |
 | `writeRegisters(addr, values)`    | FC 16 – Write multiple holding registers |
-
+| `readFileRecord(file, rec, len)`  | FC 20 – Read file record (single ref)    |
+| `writeFileRecord(file, rec, vals)`| FC 21 – Write file record (single ref)   |
+| `maskWriteRegister(addr, and, or)`| FC 22 – Mask write register              |
+| `readWriteRegisters(rAddr, rQty, wAddr, vals)` | FC 23 – Read/write multiple regs |
+| `readFifoQueue(addr)`             | FC 24 – Read FIFO queue                  |
+> [!CAUTION]
+> Not all slave libraries support file records, FIFO queues, mask writes or read-write calls
 ### Auxiliary Client Methods
 
 Utility and configuration methods exposed on `ModbusRTU`:
