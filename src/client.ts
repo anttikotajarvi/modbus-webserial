@@ -1,18 +1,27 @@
 import { WebSerialTransport, WebSerialOptions } from './transport/webserial.js';
 import {
-    buildReadCoils,
+  buildReadCoils,
   buildReadDiscreteInputs,
   buildReadHolding, buildReadInputRegisters, buildWriteMultiple, buildWriteMultipleCoils, buildWriteSingle,
   buildWriteSingleCoil,
+  buildMaskWriteRegister,
+  buildReadWriteMultiple,
+  buildReadFileRecord,
+  buildWriteFileRecord,
+  buildReadFifoQueue,
   parseReadCoils,
   parseReadDiscreteInputs,
   parseReadHolding,
   parseReadInputRegisters,
   parseWriteSingle,
+  parseMaskWriteRegister,
+  parseReadWriteMultiple,
+  parseReadFileRecord,
+  parseReadFifoQueue,
   parseWriteSingleCoil
 } from './core/frames.js';
 
-import type { ReadCoilResult, ReadRegisterResult, WriteCoilResult, WriteMultipleResult, WriteRegisterResult } from './core/types.js';
+import type { ReadCoilResult, ReadRegisterResult, WriteCoilResult, WriteMultipleResult, WriteRegisterResult, MaskWriteResult, WriteFileResult, ReadFifoResult } from './core/types.js';
 
 export class ModbusRTU {
   private id = 1;
@@ -94,6 +103,46 @@ async readDiscreteInputs(addr: number, qty: number): Promise<ReadCoilResult> {
     const raw = await this.transport.transact(buildWriteMultiple(this.id, addr, values));
     const length = values.length;
     return { address: addr, length, raw };
+  }
+ /* ================== OPTIONAL DATA-ACCESS FUNCTIONS ================== */
+
+  /** FC 22 – mask write register */
+  async maskWriteRegister(addr: number, andMask: number, orMask: number): Promise<MaskWriteResult> {
+    const raw = await this.transport.transact(buildMaskWriteRegister(this.id, addr, andMask, orMask));
+    const { address, andMask: a, orMask: o } = parseMaskWriteRegister(raw);
+    return { address, andMask: a, orMask: o, raw };
+  }
+
+  /** FC 23 – read/write multiple registers */
+  async readWriteRegisters(readAddr: number, readQty: number, writeAddr: number, values: number[]): Promise<ReadRegisterResult> {
+    const raw = await this.transport.transact(
+      buildReadWriteMultiple(this.id, readAddr, readQty, writeAddr, values)
+    );
+    return { data: parseReadWriteMultiple(raw), raw };
+  }
+
+  /** FC 20 – read file record (single reference) */
+  async readFileRecord(file: number, record: number, length: number): Promise<ReadRegisterResult> {
+    const raw = await this.transport.transact(
+      buildReadFileRecord(this.id, file, record, length)
+    );
+    return { data: parseReadFileRecord(raw), raw };
+  }
+
+  /** FC 21 – write file record (single reference) */
+  async writeFileRecord(file: number, record: number, values: number[]): Promise<WriteFileResult> {
+    const raw = await this.transport.transact(
+      buildWriteFileRecord(this.id, file, record, values)
+    );
+    return { file, record, length: values.length, raw };
+  }
+
+  /** FC 24 – read FIFO queue */
+  async readFifoQueue(addr: number): Promise<ReadFifoResult> {
+    const raw = await this.transport.transact(
+      buildReadFifoQueue(this.id, addr)
+    );
+    return { data: parseReadFifoQueue(raw), raw };
   }
 
 }

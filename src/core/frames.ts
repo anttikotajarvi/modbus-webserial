@@ -7,6 +7,11 @@ import {
     FC_WRITE_MULTIPLE_COILS,
     FC_READ_INPUT_REGISTERS,
     FC_READ_DISCRETE_INPUTS,
+    FC_MASK_WRITE_REGISTER,
+    FC_READ_WRITE_MULTIPLE_REGISTERS,
+    FC_READ_FILE_RECORD,
+    FC_WRITE_FILE_RECORD,
+    FC_READ_FIFO_QUEUE,
 } from './types';
 import { crc16 } from './crc16.js';
 import { CrcError, ExceptionError } from './errors.js';
@@ -210,6 +215,132 @@ export function buildReadDiscreteInputs(id: number, addr: number, qty: number): 
 
   return frame;
 }
+/**
+ * FC_MASK_WRITE_REGISTER (0x16)
+ * Modbus Application Protocol V1.1b3 §6.16
+ */
+export function buildMaskWriteRegister(id: number, addr: number, andMask: number, orMask: number): Uint8Array {
+  const frame = new Uint8Array(10);
+  frame[0] = id;
+  frame[1] = FC_MASK_WRITE_REGISTER;
+  frame[2] = addr >> 8;
+  frame[3] = addr & 0xff;
+  frame[4] = andMask >> 8;
+  frame[5] = andMask & 0xff;
+  frame[6] = orMask >> 8;
+  frame[7] = orMask & 0xff;
+  const crc = crc16(frame.subarray(0, 8));
+  frame[8] = crc & 0xff;
+  frame[9] = crc >> 8;
+  return frame;
+}
+
+/**
+ * FC_READ_WRITE_MULTIPLE_REGISTERS (0x17)
+ * Modbus Application Protocol V1.1b3 §6.17
+ */
+export function buildReadWriteMultiple(id: number, readAddr: number, readQty: number,
+                                       writeAddr: number, values: number[]): Uint8Array {
+  const writeQty = values.length;
+  if (readQty < 1 || readQty > 125) throw new Error('Invalid read quantity');
+  if (writeQty < 1 || writeQty > 121) throw new Error('Invalid write quantity');
+
+  const byteCount = writeQty * 2;
+  const frame = new Uint8Array(11 + byteCount + 2);
+
+  frame[0] = id;
+  frame[1] = FC_READ_WRITE_MULTIPLE_REGISTERS;
+  frame[2] = readAddr >> 8;
+  frame[3] = readAddr & 0xff;
+  frame[4] = readQty >> 8;
+  frame[5] = readQty & 0xff;
+  frame[6] = writeAddr >> 8;
+  frame[7] = writeAddr & 0xff;
+  frame[8] = writeQty >> 8;
+  frame[9] = writeQty & 0xff;
+  frame[10] = byteCount;
+  for (let i = 0; i < writeQty; i++) {
+    const v = values[i] & 0xffff;
+    frame[11 + i * 2] = v >> 8;
+    frame[12 + i * 2] = v & 0xff;
+  }
+  const crc = crc16(frame.subarray(0, frame.length - 2));
+  frame[frame.length - 2] = crc & 0xff;
+  frame[frame.length - 1] = crc >> 8;
+  return frame;
+}
+
+/**
+ * FC_READ_FILE_RECORD (0x14)
+ * Single sub-request only (ref type 0x06)
+ * Modbus Application Protocol V1.1b3 §6.14
+ */
+export function buildReadFileRecord(id: number, file: number, record: number, length: number): Uint8Array {
+  if (length < 1 || length > 120) throw new Error('Invalid record length');
+  const frame = new Uint8Array(12);
+  frame[0] = id;
+  frame[1] = FC_READ_FILE_RECORD;
+  frame[2] = 0x07;                // byte count
+  frame[3] = 0x06;                // reference type
+  frame[4] = file >> 8;
+  frame[5] = file & 0xff;
+  frame[6] = record >> 8;
+  frame[7] = record & 0xff;
+  frame[8] = length >> 8;
+  frame[9] = length & 0xff;
+  const crc = crc16(frame.subarray(0, 10));
+  frame[10] = crc & 0xff;
+  frame[11] = crc >> 8;
+  return frame;
+}
+
+/**
+ * FC_WRITE_FILE_RECORD (0x15)
+ * Single sub-request only (ref type 0x06)
+ * Modbus Application Protocol V1.1b3 §6.15
+ */
+export function buildWriteFileRecord(id: number, file: number, record: number, values: number[]): Uint8Array {
+  const len = values.length;
+  if (len < 1 || len > 120) throw new Error('Invalid record length');
+  const byteCount = 7 + len * 2;
+  const frame = new Uint8Array(3 + byteCount + 2);
+  frame[0] = id;
+  frame[1] = FC_WRITE_FILE_RECORD;
+  frame[2] = byteCount;
+  frame[3] = 0x06;
+  frame[4] = file >> 8;
+  frame[5] = file & 0xff;
+  frame[6] = record >> 8;
+  frame[7] = record & 0xff;
+  frame[8] = len >> 8;
+  frame[9] = len & 0xff;
+  for (let i = 0; i < len; i++) {
+    const v = values[i] & 0xffff;
+    frame[10 + i * 2] = v >> 8;
+    frame[11 + i * 2] = v & 0xff;
+  }
+  const crc = crc16(frame.subarray(0, frame.length - 2));
+  frame[frame.length - 2] = crc & 0xff;
+  frame[frame.length - 1] = crc >> 8;
+  return frame;
+}
+
+/** 
+ * FC_READ_FIFO_QUEUE (0x18) 
+ * Modbus Application Protocol V1.1b3 §6.18
+ */
+export function buildReadFifoQueue(id: number, addr: number): Uint8Array {
+  const frame = new Uint8Array(6);
+  frame[0] = id;
+  frame[1] = FC_READ_FIFO_QUEUE;
+  frame[2] = addr >> 8;
+  frame[3] = addr & 0xff;
+  const crc = crc16(frame.subarray(0, 4));
+  frame[4] = crc & 0xff;
+  frame[5] = crc >> 8;
+  return frame;
+}
+
 // ---------------------------------------------------------------------------
 //  FRAME PARSERS
 // ---------------------------------------------------------------------------
@@ -257,6 +388,50 @@ export function parseWriteSingleCoil(resp: Uint8Array): { address: number; state
   const addr = (resp[2] << 8) | resp[3];
   const val  = (resp[4] << 8) | resp[5];     // 0xFF00 or 0x0000
   return { address: addr, state: val === 0xff00 };
+}
+
+/** FC 16 – Mask Write Register: echo → { address, andMask, orMask } */
+export function parseMaskWriteRegister(resp: Uint8Array): { address: number; andMask: number; orMask: number } {
+  basicChecks(resp, FC_MASK_WRITE_REGISTER);
+  const addr    = (resp[2] << 8) | resp[3];
+  const andMask = (resp[4] << 8) | resp[5];
+  const orMask  = (resp[6] << 8) | resp[7];
+  return { address: addr, andMask, orMask };
+}
+
+/** FC 23 – Read/Write Multiple Registers: returns array of words */
+export function parseReadWriteMultiple(resp: Uint8Array): number[] {
+  basicChecks(resp, FC_READ_WRITE_MULTIPLE_REGISTERS);
+  const byteCount = resp[2];
+  const words: number[] = [];
+  for (let i = 0; i < byteCount; i += 2) {
+    words.push((resp[3 + i] << 8) | resp[4 + i]);
+  }
+  return words;
+}
+
+/** FC 20 – Read File Record (single sub-response) */
+export function parseReadFileRecord(resp: Uint8Array): number[] {
+  basicChecks(resp, FC_READ_FILE_RECORD);
+  const dataLen = resp[3] - 1;           // bytes of data (excludes ref-type)
+  const words: number[] = [];
+  for (let i = 0; i < dataLen; i += 2) {
+    words.push((resp[5 + i] << 8) | resp[6 + i]);
+  }
+  return words;
+}
+
+/** FC 24 – Read FIFO Queue */
+export function parseReadFifoQueue(resp: Uint8Array): number[] {
+  basicChecks(resp, FC_READ_FIFO_QUEUE);
+  const count = (resp[4] << 8) | resp[5];
+  const words: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const hi = resp[6 + i * 2];
+    const lo = resp[7 + i * 2];
+    words.push((hi << 8) | lo);
+  }
+  return words;
 }
 
 /* FC 0F & FC 10 replies are already handled inline in client methods

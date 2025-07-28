@@ -10,8 +10,11 @@ export const FC_WRITE_MULTIPLE_COILS = 0x0F;
 export const FC_READ_INPUT_REGISTERS    = 0x04;
 export const FC_READ_DISCRETE_INPUTS    = 0x02;
 
-// TODO: Consider other rest of the "data access" function codes
-// e.g. 21-24
+export const FC_READ_FILE_RECORD                = 0x14;
+export const FC_WRITE_FILE_RECORD               = 0x15;
+export const FC_MASK_WRITE_REGISTER             = 0x16;
+export const FC_READ_WRITE_MULTIPLE_REGISTERS   = 0x17;
+export const FC_READ_FIFO_QUEUE                 = 0x18;
 
 /** Result payloads returned by high-level helpers */
 export interface ReadCoilResult {
@@ -42,5 +45,24 @@ export interface WriteRegisterResult {
 export interface WriteMultipleResult {
   address: number;
   length: number;
+  raw: Uint8Array;
+}
+
+export interface MaskWriteResult {
+  address: number;
+  andMask: number;
+  orMask: number;
+  raw: Uint8Array;
+}
+
+export interface WriteFileResult {
+  file: number;
+  record: number;
+  length: number;
+  raw: Uint8Array;
+}
+
+export interface ReadFifoResult {
+  data: number[];
   raw: Uint8Array;
 }
