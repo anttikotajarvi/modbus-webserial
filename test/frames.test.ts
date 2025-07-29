@@ -184,7 +184,7 @@ describe('frame builders -> complete coverage', () => {
   });
 
   // FC 24 read FIFO queue
-  it('buildReadFifoQueue() -> correct FC18 frame', () => {
+  it('buildReadFifoQueue() -> correct FC24 frame', () => {
     const frame = buildReadFifoQueue(1, 0x1234);
     const expected = withCRC([1, FC_READ_FIFO_QUEUE, 0x12, 0x34]);
     expect(frame).toEqual(expected);
