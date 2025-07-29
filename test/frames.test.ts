@@ -142,7 +142,7 @@ describe('frame builders -> complete coverage', () => {
   });
 
   // FC 23 read/write multiple registers
-  it('buildReadWriteMultiple() -> correct FC17 frame', () => {
+  it('buildReadWriteMultiple() -> correct FC23 frame', () => {
     const frame = buildReadWriteMultiple(1, 0x0000, 2, 0x0010, [0xAAAA, 0x5555]);
     const expected = withCRC([
       1, FC_READ_WRITE_MULTIPLE_REGISTERS,
