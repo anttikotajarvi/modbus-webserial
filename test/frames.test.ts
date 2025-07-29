@@ -130,7 +130,7 @@ describe('frame builders -> complete coverage', () => {
   });
 
   // FC 22 mask write register
-  it('buildMaskWriteRegister() -> correct FC16 frame', () => {
+  it('buildMaskWriteRegister() -> correct FC22 frame', () => {
     const frame = buildMaskWriteRegister(1, 0x0050, 0x0F0F, 0xF0F0);
     const expected = withCRC([
       1, FC_MASK_WRITE_REGISTER,
