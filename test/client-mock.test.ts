@@ -8,7 +8,12 @@ import {
   FC_READ_INPUT_REGISTERS,
   FC_READ_HOLDING_REGISTERS,
   FC_WRITE_SINGLE_HOLDING_REGISTER,
-  FC_WRITE_MULTIPLE_HOLDING_REGISTERS
+  FC_WRITE_MULTIPLE_HOLDING_REGISTERS,
+  FC_MASK_WRITE_REGISTER,
+  FC_READ_WRITE_MULTIPLE_REGISTERS,
+  FC_READ_FILE_RECORD,
+  FC_WRITE_FILE_RECORD,
+  FC_READ_FIFO_QUEUE,
 } from '../src/core/types.js';
 import { crc16 } from '../src/core/crc16.js';
 
@@ -22,6 +27,8 @@ class MockTransport {
   public discrete: boolean[] = Array(64).fill(true);
   public hregs: number[]     = Array.from({ length: 64 }, (_, i) => i);
   public iregs: number[]     = Array.from({ length: 64 }, () => 0xAAAA);
+  public files: number[][]   = Array.from({ length: 8 }, () => Array(32).fill(0));
+  public fifo: number[]      = [];
 
   /* ------- timeout support for set/getTimeout tests ------- */
   private _timeout = 500;
@@ -108,6 +115,78 @@ class MockTransport {
           this.hregs[addr + i] = (hi << 8) | lo;
         }
         return ok([id, fc, frame[2], frame[3], frame[4], frame[5]]);
+      }
+
+      case FC_MASK_WRITE_REGISTER: {
+        const andMask = (frame[4] << 8) | frame[5];
+        const orMask  = (frame[6] << 8) | frame[7];
+        const cur     = this.hregs[addr] & 0xffff;
+        const next    = (cur & andMask) | (orMask & (~andMask & 0xffff));
+        this.hregs[addr] = next & 0xffff;
+        return ok([
+          id, fc,
+          frame[2], frame[3],
+          frame[4], frame[5],
+          frame[6], frame[7]
+        ]);
+      }
+
+      case FC_READ_WRITE_MULTIPLE_REGISTERS: {
+        const readAddr  = (frame[2] << 8) | frame[3];
+        const readQty   = (frame[4] << 8) | frame[5];
+        const writeAddr = (frame[6] << 8) | frame[7];
+        const writeQty  = (frame[8] << 8) | frame[9];
+        for (let i = 0; i < writeQty; i++) {
+          const hi = frame[11 + i * 2];
+          const lo = frame[12 + i * 2];
+          this.hregs[writeAddr + i] = (hi << 8) | lo;
+        }
+        const words = this.hregs.slice(readAddr, readAddr + readQty);
+        const bytes: number[] = [];
+        words.forEach(w => bytes.push(w >> 8, w & 0xff));
+        return ok([id, fc, bytes.length, ...bytes]);
+      }
+
+      case FC_READ_FILE_RECORD: {
+        const file   = (frame[4] << 8) | frame[5];
+        const record = (frame[6] << 8) | frame[7];
+        const len    = (frame[8] << 8) | frame[9];
+        const data   = this.files[file].slice(record, record + len);
+        const bytes: number[] = [];
+        data.forEach(w => bytes.push(w >> 8, w & 0xff));
+        const subLen   = bytes.length + 1; // + reference type
+        const byteCnt  = bytes.length + 3; // + sub-len + ref-type
+        return ok([id, fc, byteCnt, subLen, 0x06, ...bytes]);
+      }
+
+      case FC_WRITE_FILE_RECORD: {
+        const file   = (frame[4] << 8) | frame[5];
+        const record = (frame[6] << 8) | frame[7];
+        const len    = (frame[8] << 8) | frame[9];
+        for (let i = 0; i < len; i++) {
+          const hi = frame[10 + i * 2];
+          const lo = frame[11 + i * 2];
+          this.files[file][record + i] = (hi << 8) | lo;
+        }
+        return ok([
+          id, fc, 0x07, 0x06,
+          frame[4], frame[5],
+          frame[6], frame[7],
+          frame[8], frame[9]
+        ]);
+      }
+
+      case FC_READ_FIFO_QUEUE: {
+        const count    = this.fifo.length;
+        const byteCnt  = count * 2 + 2;
+        const bytes: number[] = [];
+        this.fifo.forEach(w => bytes.push(w >> 8, w & 0xff));
+        return ok([
+          id, fc,
+          byteCnt >> 8, byteCnt & 0xff,
+          count >> 8, count & 0xff,
+          ...bytes
+        ]);
       }
 
       default:
@@ -206,5 +285,47 @@ describe('ModbusRTU high-level helpers (mock transport)', () => {
     mock.discrete[5] = false;
     const res = await cli.readDiscreteInputs(0, 8);
     expect(res.data.slice(0, 8)).toEqual([true, true, true, true, true, false, true, true]);
+  });
+
+  /* --- Optional data access functions ------------------------------ */
+
+  it('maskWriteRegister modifies register using masks', async () => {
+    const { cli, mock } = makeClient();
+    mock.hregs[0x50] = 0x1234;
+    await cli.maskWriteRegister(0x50, 0x0F0F, 0xF0F0);
+    const expected = (0x1234 & 0x0F0F) | (0xF0F0 & (~0x0F0F & 0xffff));
+    expect(mock.hregs[0x50]).toBe(expected & 0xffff);
+  });
+
+  it('readWriteRegisters writes and reads registers', async () => {
+    const { cli, mock } = makeClient();
+    mock.hregs[0] = 0x1111;
+    mock.hregs[1] = 0x2222;
+    const res = await cli.readWriteRegisters(0, 2, 0x10, [0xAAAA, 0x5555]);
+    expect(mock.hregs[0x10]).toBe(0xAAAA);
+    expect(mock.hregs[0x11]).toBe(0x5555);
+    expect(res.data).toEqual([0x1111, 0x2222]);
+  });
+
+  it('readFileRecord retrieves words from mock file', async () => {
+    const { cli, mock } = makeClient();
+    mock.files[1][3] = 0x1234;
+    mock.files[1][4] = 0x5678;
+    const res = await cli.readFileRecord(1, 3, 2);
+    expect(res.data).toEqual([0x1234, 0x5678]);
+  });
+
+  it('writeFileRecord stores words into mock file', async () => {
+    const { cli, mock } = makeClient();
+    await cli.writeFileRecord(2, 0, [0x1111, 0x2222]);
+    expect(mock.files[2][0]).toBe(0x1111);
+    expect(mock.files[2][1]).toBe(0x2222);
+  });
+
+  it('readFifoQueue returns queued words', async () => {
+    const { cli, mock } = makeClient();
+    mock.fifo = [0x1111, 0x2222, 0x3333];
+    const res = await cli.readFifoQueue(0);
+    expect(res.data).toEqual([0x1111, 0x2222, 0x3333]);
   });
 });

@@ -4,6 +4,9 @@ export * from './core/crc16.js';
 export * from './core/errors.js';
 export type {
   ReadRegisterResult,
-  WriteRegisterResult
+  WriteRegisterResult,
+  MaskWriteResult,
+  WriteFileResult,
+  ReadFifoResult
 } from './core/types.js';
 export type { WebSerialOptions } from './transport/webserial.js';
