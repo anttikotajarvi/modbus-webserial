@@ -157,7 +157,7 @@ describe('frame builders -> complete coverage', () => {
   });
 
   // FC 20 read file record
-  it('buildReadFileRecord() -> correct FC14 frame', () => {
+  it('buildReadFileRecord() -> correct FC20 frame', () => {
     const frame = buildReadFileRecord(1, 1, 3, 2);
     const expected = withCRC([
       1, FC_READ_FILE_RECORD,
