@@ -44,6 +44,7 @@ export class ModbusRTU {
 
   setTimeout(ms: number) { this.transport.setTimeout(ms); }
   getTimeout()          { return this.transport.getTimeout(); }
+  getPort()             { return this.transport.getPort(); }
 
  
   /* =========================  READ  =============================== */

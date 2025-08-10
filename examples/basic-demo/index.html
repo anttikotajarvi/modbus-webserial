@@ -43,6 +43,13 @@ btnConnect.onclick = async () => {
     client = await ModbusRTU.openWebSerial({ baudRate: 9600 });
     client.setID(1);
     log("✔️  Connected");
+    const info = client.getPort().getInfo();
+    if (info.usbVendorId || info.usbProductId) {
+      const parts = [];
+      if (info.usbVendorId) parts.push(`VID=0x${info.usbVendorId.toString(16)}`);
+      if (info.usbProductId) parts.push(`PID=0x${info.usbProductId.toString(16)}`);
+      log(`🔎 ${parts.join(" ")}`);
+    }
     btnRead.disabled = btnWrite.disabled = false;
   } catch (e) { log("❌ " + e.message); }
 };

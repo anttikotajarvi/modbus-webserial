@@ -27,6 +27,7 @@ export class WebSerialTransport {
   // timeout gelpers
   setTimeout(ms: number) { this.timeout = ms; }
   getTimeout()          { return this.timeout; }
+  getPort()             { return this.port; }
 
   // ----------------------------------------------------------------
   // Factory

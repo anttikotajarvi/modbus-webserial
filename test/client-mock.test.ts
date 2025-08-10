@@ -29,11 +29,13 @@ class MockTransport {
   public iregs: number[]     = Array.from({ length: 64 }, () => 0xAAAA);
   public files: number[][]   = Array.from({ length: 8 }, () => Array(32).fill(0));
   public fifo: number[]      = [];
+  public port = {} as SerialPort;
 
   /* ------- timeout support for set/getTimeout tests ------- */
   private _timeout = 500;
   setTimeout(ms: number) { this._timeout = ms; }
   getTimeout()  { return this._timeout; }
+  getPort()     { return this.port; }
 
   calls: Uint8Array[] = [];
   async transact(frame: Uint8Array): Promise<Uint8Array> {
@@ -226,6 +228,11 @@ describe('ModbusRTU high-level helpers (mock transport)', () => {
     cli.setTimeout(2000);
     expect(cli.getTimeout()).toBe(2000);
     expect(mock.getTimeout()).toBe(2000);
+  });
+
+  it('getPort exposes underlying SerialPort', () => {
+    const { cli, mock } = makeClient();
+    expect(cli.getPort()).toBe(mock.port);
   });
 
   /* --- Holding registers ------------------------------------------- */
