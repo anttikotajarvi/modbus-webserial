@@ -86,6 +86,8 @@ Utility and configuration methods exposed on `ModbusRTU`:
 | `getID()`                | Get the current slave ID            |
 | `setTimeout(ms)`         | Set transaction timeout (ms)        |
 | `getTimeout()`           | Get current timeout (ms)            |
+| `getPort()`              | Get 'SerialPort' instance*          |
+*Note: The returned `SerialPort` instance from `getPort` can be used to access properties such as `usbVendorId` and `usbProductId` for retrieving information about the connected USB device.*
 
 ## Examples
 
