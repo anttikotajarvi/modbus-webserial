@@ -2,6 +2,7 @@
 
 Tiny zero-dependency library for communicating with a Modbus-RTU serial device from the browser via WebSerial.
 
+[![Mentioned in Awesome](https://awesome.re/mentioned-badge.svg)](https://github.com/louisfoster/awesome-web-serial#code-utilities)
 ![npm](https://img.shields.io/npm/v/modbus-webserial)
 ![size](https://img.shields.io/bundlephobia/minzip/modbus-webserial)
 ![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
