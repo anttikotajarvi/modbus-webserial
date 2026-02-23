@@ -1,6 +1,6 @@
 # modbus-webserial
 
-Tiny zero-dependency library for communicating with a Modbus-RTU serial device from the browser via WebSerial.
+Zero-dependency library for communicating with a Modbus-RTU serial device from the browser via WebSerial.
 
 [![Mentioned in Awesome](https://awesome.re/mentioned-badge.svg)](https://github.com/louisfoster/awesome-web-serial#code-utilities)
 ![npm](https://img.shields.io/npm/v/modbus-webserial)
@@ -11,14 +11,13 @@ Tiny zero-dependency library for communicating with a Modbus-RTU serial device f
 ![types](https://img.shields.io/npm/types/modbus-webserial)
 ![esm](https://img.shields.io/badge/esm-%F0%9F%9A%80-green)
 
-## Install
-
-```bash
-npm install modbus-webserial
-```
 
 ## Usage
-**Connect  → read/write in browser**
+**Try the web UI at**
+**[modbuswebui.dev](https://modbuswebui.dev/)**
+
+
+**Establish connection and read/write in browser**
 ```javascript
 import { ModbusRTU } from 'modbus-webserial';
 
@@ -26,13 +25,25 @@ import { ModbusRTU } from 'modbus-webserial';
 const client = await ModbusRTU.openWebSerial({ baudRate: 9600 });
 client.setID(1);
 
-// Read holding registers 0x00 and 0x01
+// Read two holding registers from 0x0000 (0x0000 and 0x0001)
 const { data } = await client.readHoldingRegisters(0, 2);
 console.log('HR0=', data[0], 'HR1=', data[1]);
 
-// Write values to holding registers 0x00 and 0x01
+// Write values to holding registers 0x00 and 0x01 (i.e. two registers from 0x0000)
 await client.writeRegisters(0, [0x0A, 0x0B]);
 ```
+**You can also manually supply the port** 
+```javascript
+const [port] = await navigator.serial.getPorts()
+const client = await ModbusRTU.openWebSerial({ baudRate: 9600, port })
+
+// or on connect
+navigator.serial.addEventListener("connect", ({target: port}) => {
+   const client = await ModbusRTU.openWebSerial({ baudRate: 9600, port })
+})
+```
+
+---
 **Can also be used *without* WebSerial for building modbus frames in any environment**
 ```javascript
 import {
@@ -43,15 +54,18 @@ import {
 // Build a “Read Holding Registers” frame (ID=1, addr=0, qty=2)
 const rawRead = buildReadHoldingRegisters(1, 0x00, 2);
 console.log(rawRead);
-// → Uint8Array [0x01, 0x03, 0x00, 0x00, 0x00, 0x02, CRC_LO, CRC_HI]
+// Uint8Array [0x01, 0x03, 0x00, 0x00, 0x00, 0x02, CRC_LO, CRC_HI]
 
 // Build a “Write Multiple Registers” frame (ID=1, addr=0, values=[10,11])
 const rawWrite = buildWriteRegisters(1, 0x00, [0x0A, 0x0B]);
 console.log(rawWrite);
-// → Uint8Array [0x01, 0x10, 0x00, 0x00, 0x00, 0x02, 0x04, 0x00,0x0A, 0x00,0x0B, CRC_LO, CRC_HI]
+// Uint8Array [0x01, 0x10, 0x00, 0x00, 0x00, 0x02, 0x04, 0x00,0x0A, 0x00,0x0B, CRC_LO, CRC_HI]
 ```
 > [!TIP]
 > Check `src/index.ts` (or `dist/index.js`) for all exports 
+
+---
+
 ## Supported Functions
 
 ### Modbus Data Functions
@@ -91,6 +105,8 @@ Utility and configuration methods exposed on `ModbusRTU`:
 
 [^1]: The returned `SerialPort` instance from `getPort` can be used to access properties such as `usbVendorId` and `usbProductId` for retrieving information about the connected USB device.
 
+---
+
 ## Examples
 
 The following demos are fully self‑contained HTML files, served via GitHub Pages:
@@ -100,6 +116,25 @@ The following demos are fully self‑contained HTML files, served via GitHub Pag
 * [64‑Register Smoke Test](https://anttikotajarvi.github.io/modbus-webserial/examples/smoke-test/)
   Automated loop testing read/write of 64 registers, coils, and discrete inputs with live counters and error logging.
 
+* [Modbus Web-UI](https://modbuswebui.dev)
+  MB Master web app with UX fetures etc.
+
+--- 
+
+## Behavior
+### CRC policy (strict vs resync)
+
+By default the transport uses **strict** CRC checking: if a received Modbus RTU frame fails CRC validation, the request fails with `CrcError`.
+
+You can switch to a more tolerant mode that tries to recover from occasional line noise:
+
+```js
+const client = await ModbusRTU.openWebSerial({
+  baudRate: 9600,
+  crcPolicy: { mode: "resync", maxResyncDrops: 32 },
+});
+```
+
 ## Current state
 * **v0.10**: Full modbus data-access coverage
 * **v0.9**: Full passing tests, smoke test passed, complete README, build scripts in place
@@ -108,8 +143,4 @@ The following demos are fully self‑contained HTML files, served via GitHub Pag
 
 ## Roadmap
 
-* **v1.0.0**: Finalize API, apply bug fixes, refine docs, production-ready release
-
----
-
-© 2025 Antti Kotajärvi
+* **v1.0.0**: Create and document more tests for different boards using different browsers.

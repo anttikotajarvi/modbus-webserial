@@ -11,8 +11,10 @@
   #errors{border:1px solid #c33;background:#fee;padding:.6rem;margin-top:1rem;
           max-height:9rem;overflow:auto;font-size:.9rem}
   #plan{background:#f7f7f7;border:1px solid #aaa;padding:.8rem 1rem;margin-top:1rem}
+
   ol{margin:.4rem 0 .7rem 1.2rem}
   .count{font-size:.85rem;color:#0a0;font-weight:600}
+  code{background:#eee;padding:.08rem .25rem;border-radius:.25rem}
 </style>
 </head>
 <body>
@@ -24,12 +26,27 @@
 <span id="status"></span>
 
 <p>Elapsed: <span id="elapsed">0 s</span></p>
+
+<div>
+  <label for="desc"><b>Description</b></label>
+  <p id="desc">
+    How it runs: <br>
+    - Click Connect to open a WebSerial Modbus RTU client (one request at a time).<br>
+    - Click Start to run a full "runOnce()" test cycle repeatedly.<br>
+    - Each cycle performs many Modbus function calls (bulk + lots of single reads/writes).<br>
+    - The Delay value is applied ONLY between cycles:<br>
+        while (running) { await runOnce(); await sleep(delayMs); }
+  </p>
+</div>
+
 <div id="errors" hidden></div>
+
 <label style="margin-left:1rem">
-  Delay&nbsp;<input id="delay" type="number" min="10" step="100" value="1000" style="width:5rem"> ms
+  Delay&nbsp;<input id="delay" type="number" min="0" step="1" value="1000" style="width:6rem"> ms
 </label>
+
 <div id="plan">
-<strong>Loop interval: <span id="interval">1&nbsp;s</span></strong>
+<strong>Loop interval: <span id="interval">1.0&nbsp;s</span></strong>
 <ol>
   <li><b>Holding registers&nbsp;(0&nbsp;–&nbsp;63)</b>
     &nbsp;&nbsp;<span class="count" id="cnt1">0</span></li>
@@ -64,12 +81,21 @@
 <b>Errors</b> appear with their sub-step tag (e.g.&nbsp;“3-c”), counters tick after
 each major step completes without error.
 </div>
+
 <details style="margin-top:1.2rem">
   <summary style="cursor:pointer;font-weight:600">
-    Example Arduino sketch &nbsp;(ATmega32u4, 64 regs/64 bits)
+    Example Arduino sketch (ATmega32u4 over USB CDC, 64 regs/64 bits)
   </summary>
   <pre style="background:#f0f0f0;border:1px solid #bbb;
-              padding:.8rem;overflow:auto;max-height:18rem;font-size:.85rem">
+              padding:.8rem;overflow:auto;max-height:20rem;font-size:.85rem">
+#include &lt;Arduino.h&gt;
+
+// Some AVR cores don't define HAVE_CDCSERIAL even though USBCON exists.
+// This makes ModbusRTUSlave(Serial_&amp;) available on ATmega32u4 (Leonardo/Micro/Pro Micro).
+#if defined(USBCON) &amp;&amp; !defined(HAVE_CDCSERIAL)
+  #define HAVE_CDCSERIAL
+#endif
+
 #include &lt;ModbusRTUSlave.h&gt;
 
 constexpr uint8_t  SLAVE_ID = 1;
@@ -81,25 +107,31 @@ uint16_t inputRegs  [64];
 bool     coils      [64];
 bool     discretes  [64];
 
-ModbusRTUSlave mb(SLAVE_ID);
+// Force USB-CDC serial (Serial_) on 32u4
+ModbusRTUSlave mb((Serial_&amp;)Serial);
 
 void setup() {
   Serial.begin(BAUD);
-  while (!Serial) { }                 // wait for USB-CDC
+
+  // Don't block forever; browser opens the port when ready
+  unsigned long t0 = millis();
+  while (!Serial &amp;&amp; (millis() - t0) &lt; 2000) {}
 
   mb.configureHoldingRegisters(holdingRegs,  64);
   mb.configureInputRegisters  (inputRegs,    64);
   mb.configureCoils           (coils,        64);
   mb.configureDiscreteInputs  (discretes,    64);
 
-  mb.begin(Serial, BAUD);
+  // Baud doesn't change USB speed, but the library uses it for RTU timing/timeout math.
+  mb.begin(SLAVE_ID, BAUD, SERIAL_8N1);
 }
 
 void loop() {
-  mb.poll();                          // service Modbus RTU
+  mb.poll();
 }
   </pre>
 </details>
+
 <script type="module">
 import { ModbusRTU } from "https://unpkg.com/modbus-webserial@latest/dist/index.js";
 
@@ -117,12 +149,13 @@ let cli=null, timer=null, sec=0, running=false;
 const delayInput   = document.getElementById('delay');
 const intervalSpan = document.getElementById('interval');
 
+
 // show initial value
 intervalSpan.textContent = (delayInput.value / 1000).toFixed(1) + ' s';
 
 // update display when user edits
 delayInput.oninput = () => {
-  const ms = parseInt(delayInput.value, 10) || 1000;
+  const ms = Math.max(0, parseInt(delayInput.value, 10) || 0);
   intervalSpan.textContent = (ms / 1000).toFixed(1) + ' s';
 };
 
@@ -172,7 +205,7 @@ btnP.onclick=()=>{
 async function runLoop(){
   while(running){
     await runOnce().catch(console.error);
-    const ms = parseInt(delayInput.value, 10) || 1000;
+    const ms = Math.max(0, parseInt(delayInput.value, 10) || 0);
     await new Promise(r => setTimeout(r, ms));
   }
 }

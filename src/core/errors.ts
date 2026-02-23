@@ -19,6 +19,18 @@ export class CrcError extends Error {
   constructor() { super('CRC check failed'); }
 }
 
+export class ResyncError extends Error {
+  public readonly drops: number;
+  public readonly maxDrops: number;
+
+  constructor(drops: number, maxDrops: number) {
+    super(`Resync failed (dropped ${drops}/${maxDrops} bytes)`);
+    this.name = 'ResyncError';
+    this.drops = drops;
+    this.maxDrops = maxDrops;
+  }
+}
+
 export class TimeoutError extends Error {
   constructor() { super('Modbus response timed out'); }
 }
