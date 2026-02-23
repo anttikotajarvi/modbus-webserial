@@ -11,7 +11,12 @@ Tiny zero-dependency library for communicating with a Modbus-RTU serial device f
 ![types](https://img.shields.io/npm/types/modbus-webserial)
 ![esm](https://img.shields.io/badge/esm-%F0%9F%9A%80-green)
 
+
 ## Usage
+**Try the web ui at**
+**[modbuswebui.dev](https://modbuswebui.dev/)**
+
+
 **Establish connection and read/write in browser**
 ```javascript
 import { ModbusRTU } from 'modbus-webserial';
@@ -27,6 +32,18 @@ console.log('HR0=', data[0], 'HR1=', data[1]);
 // Write values to holding registers 0x00 and 0x01 (i.e. two registers from 0x0000)
 await client.writeRegisters(0, [0x0A, 0x0B]);
 ```
+**You can also manually supply the port** 
+```javascript
+const [port] = await navigator.serial.getPorts()
+const client = await ModbusRTU.openWebSerial({ baudRate: 9600, port })
+
+// or on connect
+navigator.serial.addEventListener("connect", ({target: port}) => {
+   const client = await ModbusRTU.openWebSerial({ baudRate: 9600, port })
+})
+```
+
+---
 **Can also be used *without* WebSerial for building modbus frames in any environment**
 ```javascript
 import {
