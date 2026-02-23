@@ -10,6 +10,7 @@ export interface WebSerialOptions {
   stopBits?: 1 | 2;
   parity?:   'none' | 'even' | 'odd';
   requestFilters?: SerialPortFilter[];
+  port?: SerialPort;
   timeout?: number;                 // ms
 }
 
@@ -40,7 +41,7 @@ export class WebSerialTransport {
 
   private async init(opts: WebSerialOptions) {
     this.timeout = opts.timeout ?? 500;
-    this.port = await navigator.serial.requestPort({ filters: opts.requestFilters ?? [] });
+    this.port = opts.port ?? await navigator.serial.requestPort({ filters: opts.requestFilters ?? [] });
     await this.port.open({
       baudRate: opts.baudRate ?? 9600,
       dataBits: opts.dataBits ?? 8,
