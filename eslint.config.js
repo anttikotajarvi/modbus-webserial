@@ -38,7 +38,8 @@ export default [
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_' }
-      ]
+      ],
+      'fallthrough': 'allowed'
     }
   }
 ];

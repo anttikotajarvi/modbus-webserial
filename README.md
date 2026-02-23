@@ -1,6 +1,6 @@
 # modbus-webserial
 
-Tiny zero-dependency library for communicating with a Modbus-RTU serial device from the browser via WebSerial.
+Zero-dependency library for communicating with a Modbus-RTU serial device from the browser via WebSerial.
 
 [![Mentioned in Awesome](https://awesome.re/mentioned-badge.svg)](https://github.com/louisfoster/awesome-web-serial#code-utilities)
 ![npm](https://img.shields.io/npm/v/modbus-webserial)
@@ -13,7 +13,7 @@ Tiny zero-dependency library for communicating with a Modbus-RTU serial device f
 
 
 ## Usage
-**Try the web ui at**
+**Try the web UI at**
 **[modbuswebui.dev](https://modbuswebui.dev/)**
 
 
@@ -63,6 +63,9 @@ console.log(rawWrite);
 ```
 > [!TIP]
 > Check `src/index.ts` (or `dist/index.js`) for all exports 
+
+---
+
 ## Supported Functions
 
 ### Modbus Data Functions
@@ -102,6 +105,8 @@ Utility and configuration methods exposed on `ModbusRTU`:
 
 [^1]: The returned `SerialPort` instance from `getPort` can be used to access properties such as `usbVendorId` and `usbProductId` for retrieving information about the connected USB device.
 
+---
+
 ## Examples
 
 The following demos are fully self‑contained HTML files, served via GitHub Pages:
@@ -110,6 +115,25 @@ The following demos are fully self‑contained HTML files, served via GitHub Pag
   Simple page to connect, read two registers, and write two registers.
 * [64‑Register Smoke Test](https://anttikotajarvi.github.io/modbus-webserial/examples/smoke-test/)
   Automated loop testing read/write of 64 registers, coils, and discrete inputs with live counters and error logging.
+
+* [Modbus Web-UI](https://modbuswebui.dev)
+  MB Master web app with UX fetures etc.
+
+--- 
+
+## Behavior
+### CRC policy (strict vs resync)
+
+By default the transport uses **strict** CRC checking: if a received Modbus RTU frame fails CRC validation, the request fails with `CrcError`.
+
+You can switch to a more tolerant mode that tries to recover from occasional line noise:
+
+```js
+const client = await ModbusRTU.openWebSerial({
+  baudRate: 9600,
+  crcPolicy: { mode: "resync", maxResyncDrops: 32 },
+});
+```
 
 ## Current state
 * **v0.10**: Full modbus data-access coverage
@@ -120,7 +144,3 @@ The following demos are fully self‑contained HTML files, served via GitHub Pag
 ## Roadmap
 
 * **v1.0.0**: Create and document more tests for different boards using different browsers.
-
----
-
-© 2025 Antti Kotajärvi
