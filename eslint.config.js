@@ -3,7 +3,7 @@ import ts from 'typescript-eslint';
 import globals from 'globals';
 
 /**
- * Flat‑config for ESLint ≥ v9
+ * Flat‑config for ESLint ≥ v9
  * – JS recommended rules
  * – TypeScript plugin & rules
  * – Browser + Node globals so Web Serial names (`SerialPort`, `navigator` …)
@@ -17,6 +17,7 @@ export default [
 
   {
     files: ['**/*.ts', '**/*.tsx'],
+    filesExcluded: ['**/node_modules/**', '**/dist/**', 'tsup.config.ts'],
     plugins: { '@typescript-eslint': ts.plugin },
 
     languageOptions: {
@@ -25,11 +26,12 @@ export default [
       globals: {
         ...globals.node,
         ...globals.browser,
-        // extra Web Serial globals not yet in @types/dom
+        // extra Web Serial globals not yet in @types/dom
         SerialPort:        'readonly',
         SerialPortFilter:  'readonly'
       }
     },
+    
 
     rules: {
       'no-undef': 'off',
@@ -39,7 +41,8 @@ export default [
         'error',
         { argsIgnorePattern: '^_' }
       ],
-      'fallthrough': 'off'
+      'fallthrough': 'off',
+      'no-irregular-whitespace': 'off'
     }
   }
 ];

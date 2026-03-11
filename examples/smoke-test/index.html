@@ -131,9 +131,26 @@ void loop() {
 }
   </pre>
 </details>
+<script>
+const params = new URLSearchParams(location.search)
+const src =
+  params.get("src") ??
+  "https://unpkg.com/modbus-webserial/dist/index.js"
 
+const map = {
+  imports: {
+    "modbus-webserial": src
+  }
+}
+
+const el = document.createElement("script")
+el.type = "importmap"
+el.textContent = JSON.stringify(map)
+
+document.currentScript.after(el)
+</script>
 <script type="module">
-import { ModbusRTU } from "https://unpkg.com/modbus-webserial@latest/dist/index.js";
+import { ModbusRTU } from "modbus-webserial";
 
 // ----------------------------------------------------------------
 // Helpers and globals
