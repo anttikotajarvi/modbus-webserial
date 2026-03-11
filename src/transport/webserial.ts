@@ -1,5 +1,6 @@
 import { TimeoutError, CrcError, ResyncError } from "../core/errors.js";
 import { crc16 } from "../core/crc16.js";
+import { FC_MASK_WRITE_REGISTER, FC_READ_COILS, FC_READ_DISCRETE_INPUTS, FC_READ_FIFO_QUEUE, FC_READ_FILE_RECORD, FC_READ_HOLDING_REGISTERS, FC_READ_INPUT_REGISTERS, FC_READ_WRITE_MULTIPLE_REGISTERS, FC_WRITE_FILE_RECORD, FC_WRITE_MULTIPLE_COILS, FC_WRITE_MULTIPLE_HOLDING_REGISTERS, FC_WRITE_SINGLE_COIL, FC_WRITE_SINGLE_HOLDING_REGISTER } from "../core/types.js";
 
 // ----------------------------------------------------------------
 //  User-visible options
@@ -288,6 +289,156 @@ export class WebSerialTransport {
   }
 }
 
+/**
+ * We cannot prove that a response matches a request, 
+ * but we can prove a mismatch by:
+ *  - Device address
+ *  - Function code
+ *  - Length
+ */
+export function proveRequestResponseMismatch(
+  req: Uint8Array,
+  res: Uint8Array,
+): boolean {
+  if (req.length < 2 || res.length < 2) return true;
+
+  const reqAddr = req[0];
+  const reqFc = req[1];
+
+  const resAddr = res[0];
+  const resFc = res[1];
+  const resBaseFc = resFc & 0x7f;
+
+  // Different slave/device address => definite mismatch
+  if (resAddr !== reqAddr) return true;
+
+  // Different function family => definite mismatch
+  if (resBaseFc !== reqFc) return true;
+
+  // Exception response: addr, fc|0x80, excCode, crcLo, crcHi
+  if (resFc & 0x80) {
+    return res.length !== 5;
+  }
+
+  switch (reqFc) {
+    // ------------------------------------------------------------
+    // Bit/word reads with response byte-count determined by quantity
+    // ------------------------------------------------------------
+    case FC_READ_COILS:
+    case FC_READ_DISCRETE_INPUTS: {
+      if (req.length < 6 || res.length < 3) return true;
+
+      const quantity = u16be(req, 4);
+      const expectedByteCount = Math.ceil(quantity / 8);
+
+      if (res[2] !== expectedByteCount) return true;
+      if (res.length !== 3 + expectedByteCount + 2) return true;
+
+      return false;
+    }
+
+    case FC_READ_HOLDING_REGISTERS:
+    case FC_READ_INPUT_REGISTERS: {
+      if (req.length < 6 || res.length < 3) return true;
+
+      const quantity = u16be(req, 4);
+      const expectedByteCount = quantity * 2;
+
+      if (res[2] !== expectedByteCount) return true;
+      if (res.length !== 3 + expectedByteCount + 2) return true;
+
+      return false;
+    }
+
+    // ------------------------------------------------------------
+    // Echo-style writes
+    // ------------------------------------------------------------
+    case FC_WRITE_SINGLE_COIL:
+    case FC_WRITE_SINGLE_HOLDING_REGISTER:
+    case FC_MASK_WRITE_REGISTER: {
+      // Response echoes request body (excluding CRC bytes)
+      if (req.length < 8 || res.length !== req.length) return true;
+
+      // addr+fc already checked, compare body up to CRC
+      if (!bytesEqual(req, 2, res, 2, req.length - 4)) return true;
+
+      return false;
+    }
+
+    case FC_WRITE_MULTIPLE_COILS:
+    case FC_WRITE_MULTIPLE_HOLDING_REGISTERS: {
+      // Fixed 8-byte response: addr fc startHi startLo qtyHi qtyLo crcLo crcHi
+      if (req.length < 6 || res.length !== 8) return true;
+
+      // start address + quantity echoed back
+      if (!bytesEqual(req, 2, res, 2, 4)) return true;
+
+      return false;
+    }
+
+    // ------------------------------------------------------------
+    // Read/Write Multiple Registers
+    // Response corresponds to READ quantity only
+    // ------------------------------------------------------------
+    case FC_READ_WRITE_MULTIPLE_REGISTERS: {
+      // req layout:
+      // addr fc readStartHi readStartLo readQtyHi readQtyLo
+      //      writeStartHi writeStartLo writeQtyHi writeQtyLo byteCount ...
+      if (req.length < 10 || res.length < 3) return true;
+
+      const readQuantity = u16be(req, 4);
+      const expectedByteCount = readQuantity * 2;
+
+      if (res[2] !== expectedByteCount) return true;
+      if (res.length !== 3 + expectedByteCount + 2) return true;
+
+      return false;
+    }
+
+    // ------------------------------------------------------------
+    // Read FIFO Queue
+    // Response:
+    // addr fc byteCountHi byteCountLo fifoCountHi fifoCountLo data... crcLo crcHi
+    // total length should be 4 + byteCount + 2
+    // byteCount includes fifoCount(2) + fifoData bytes
+    // ------------------------------------------------------------
+    case FC_READ_FIFO_QUEUE: {
+      if (res.length < 6) return true;
+
+      const byteCount = u16be(res, 2);
+
+      if (byteCount < 2) return true; // must at least include fifoCount field
+      if (res.length !== 4 + byteCount + 2) return true;
+
+      // Optional consistency: remaining FIFO data bytes should be even
+      const fifoDataBytes = byteCount - 2;
+      if (fifoDataBytes % 2 !== 0) return true;
+
+      return false;
+    }
+
+    // ------------------------------------------------------------
+    // File record functions
+    // We only prove structural mismatch cheaply here.
+    // ------------------------------------------------------------
+    case FC_READ_FILE_RECORD:
+    case FC_WRITE_FILE_RECORD: {
+      // Both replies begin with addr fc byteCount ...
+      if (res.length < 5) return true;
+
+      const byteCount = res[2];
+
+      if (res.length !== 3 + byteCount + 2) return true;
+
+      return false;
+    }
+
+    default:
+      // Unknown FC-specific semantics: not disproven
+      return false;
+  }
+}
+
 // ----------------------------------------------------------------
 //  Tiny helper to concatenate Uint8Arrays
 // ----------------------------------------------------------------
@@ -296,4 +447,20 @@ function concat(a: Uint8Array, b: Uint8Array) {
   out.set(a, 0);
   out.set(b, a.length);
   return out;
+}
+function u16be(buf: Uint8Array, offset: number): number {
+  return (buf[offset] << 8) | buf[offset + 1];
+}
+
+function bytesEqual(
+  a: Uint8Array,
+  aStart: number,
+  b: Uint8Array,
+  bStart: number,
+  len: number,
+): boolean {
+  for (let i = 0; i < len; i++) {
+    if (a[aStart + i] !== b[bStart + i]) return false;
+  }
+  return true;
 }
