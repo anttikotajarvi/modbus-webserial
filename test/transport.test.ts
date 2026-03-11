@@ -20,11 +20,10 @@
  * we expect the transport to return.  Only the first two bytes of `req`
  * (`id`, `fc`) are inspected by the transport — the remainder is ignored.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { WebSerialTransport } from "../src/transport/webserial";
 import { crc16 } from "../src/core/crc16";
 import { CrcError, ResyncError, TimeoutError } from "../src/core/errors";
-import { buildReadHolding, buildWriteSingle } from "../src/core/frames";
 
 function buildResponse(frameBody: number[]): Uint8Array {
   const crc = crc16(Uint8Array.from(frameBody));
@@ -39,30 +38,97 @@ type FakeTransportOpts = {
   maxResyncDrops?: number;
 };
 
+type ReadStep =
+  | { type: "chunk"; value: Uint8Array } // read() resolved immediately
+  | { type: "pending" } // read() does not resolve until manually resolved with __resolveNextRead()
+  | { type: "end" }; // read() resolves like stream closed
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
+
 function fakeTransport(
-  chunks: Uint8Array[],
+  steps: Array<Uint8Array | ReadStep>,
   opts: FakeTransportOpts = {},
-): WebSerialTransport {
+) {
   const t = Object.create(WebSerialTransport.prototype) as any;
 
   t.timeout = opts.timeout ?? 50;
   t.rxBuf = new Uint8Array(0);
 
-  // set normalized internals directly (no default-policy logic here)
   if (opts.strictCrc !== undefined) t.strictCrc = opts.strictCrc;
   if (opts.maxResyncDrops !== undefined) t.maxResyncDrops = opts.maxResyncDrops;
 
   t.writer = { write: async () => {} };
 
-  const it = chunks[Symbol.iterator]();
-  t.reader = {
-    read: async () => {
-      const { value, done } = it.next();
-      return done ? { value: undefined } : { value };
-    },
+  const normalized: ReadStep[] = steps.map((s) =>
+    s instanceof Uint8Array ? { type: "chunk", value: s } : s,
+  );
+
+  const pendingReads: Array<
+    ReturnType<typeof deferred<{ value?: Uint8Array; done?: boolean }>>
+  > = [];
+
+  const it = normalized[Symbol.iterator]();
+
+  t.__resolveNextRead = (value?: Uint8Array) => {
+    const d = pendingReads.shift();
+    if (!d) throw new Error("No pending read");
+    d.resolve(
+      value ? { value, done: false } : { value: undefined, done: true },
+    );
   };
 
-  return t as WebSerialTransport;
+  t.__pendingReads = pendingReads;
+
+  function makeReader() {
+    return {
+      read: () => {
+        const { value, done } = it.next();
+
+        if (done || value.type === "end") {
+          return Promise.resolve({ value: undefined, done: true });
+        }
+
+        if (value.type === "chunk") {
+          return Promise.resolve({ value: value.value, done: false });
+        }
+
+        const d = deferred<{ value?: Uint8Array; done?: boolean }>();
+        pendingReads.push(d);
+        return d.promise;
+      },
+
+      cancel: async () => {
+        const d = pendingReads.shift();
+        d?.resolve({ value: undefined, done: true });
+      },
+
+      releaseLock: () => {},
+    };
+  }
+
+  t.port = {
+    readable: {
+      getReader: () => makeReader(),
+    },
+  };
+  t.reader = t.port.readable.getReader();
+
+  return t as WebSerialTransport & {
+    __resolveNextRead: (value?: Uint8Array) => void;
+    __pendingReads: Array<
+      ReturnType<typeof deferred<{ value?: Uint8Array; done?: boolean }>>
+    >;
+  };
 }
 
 describe("WebSerialTransport frame assembly", () => {
@@ -116,7 +182,10 @@ describe("WebSerialTransport frame assembly", () => {
   it("resync: ignores bad frame and returns good frame", async () => {
     const bad = Uint8Array.from([1, 0x03, 0x02, 0x12, 0x34, 0x00, 0x00]);
     const good = buildResponse([1, 0x03, 0x02, 0xaa, 0x55]);
-    const tr = fakeTransport([bad, good], { strictCrc: false, maxResyncDrops: 32 });
+    const tr = fakeTransport([bad, good], {
+      strictCrc: false,
+      maxResyncDrops: 32,
+    });
     const req = Uint8Array.from([1, 0x03]);
 
     const ok = await tr.transact(req);
@@ -179,7 +248,7 @@ describe("WebSerialTransport frame assembly", () => {
     await expect(tr.transact(req)).resolves.toEqual(good);
   });
 
-    it("resync: handles good+bad+good in same chunk", async () => {
+  it("resync: handles good+bad+good in same chunk", async () => {
     const bad = Uint8Array.from([1, 0x03, 0x02, 0x12, 0x34, 0x00, 0x00]);
     const good = buildResponse([1, 0x03, 0x02, 0xaa, 0x55]);
 
@@ -190,5 +259,69 @@ describe("WebSerialTransport frame assembly", () => {
 
     const req = Uint8Array.from([1, 0x03]);
     await expect(tr.transact(req)).resolves.toEqual(good);
+  });
+
+  /* Timeout fixes patch-0.10.4 */
+  it("times out even when reader.read() stays pending", async () => {
+    vi.useFakeTimers();
+
+    const tr = fakeTransport([{ type: "pending" }], { timeout: 100 });
+    const req = Uint8Array.from([1, 0x03]);
+
+    const p = expect(tr.transact(req)).rejects.toBeInstanceOf(TimeoutError);
+
+    await vi.advanceTimersByTimeAsync(101);
+    await p;
+
+    vi.useRealTimers();
+  });
+
+  it("times out while waiting for the second chunk of a partial frame", async () => {
+    vi.useFakeTimers();
+
+    const tr = fakeTransport([{ type: "pending" }, { type: "pending" }], {
+      timeout: 100,
+    });
+    const req = Uint8Array.from([1, 0x03]);
+    const ok = buildResponse([1, 0x03, 0x02, 0x12, 0x34]);
+
+    const p = expect(tr.transact(req)).rejects.toBeInstanceOf(TimeoutError);
+
+    await Promise.resolve(); // let first read start
+    tr.__resolveNextRead(ok.slice(0, 3));
+    await Promise.resolve(); // let it loop to second read
+
+    await vi.advanceTimersByTimeAsync(101);
+    await p;
+
+    vi.useRealTimers();
+  });
+   
+  it("does not lose the next reply after a timed-out read", async () => {
+    vi.useFakeTimers();
+
+    const tr = fakeTransport([{ type: "pending" }, { type: "pending" }], {
+      timeout: 100,
+    });
+    const req = Uint8Array.from([1, 0x03]);
+    const good = buildResponse([1, 0x03, 0x02, 0xaa, 0x55]);
+
+    const p1 = expect(tr.transact(req)).rejects.toBeInstanceOf(TimeoutError);
+    await vi.advanceTimersByTimeAsync(101);
+    await p1;
+
+    const p2 = tr.transact(req);
+    await Promise.resolve();
+    tr.__resolveNextRead(good);
+
+    await expect(p2).resolves.toEqual(good);
+
+    vi.useRealTimers();
+  });
+
+  it.skip("does not let a late reply from a timed-out transaction satisfy the next one", async () => {
+    // Requires explicit post-timeout stale-frame draining/resync policy.
+    // Current transport matches only by function code, so a late old reply
+    // can be accepted by the next transact() call.
   });
 });

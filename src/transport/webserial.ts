@@ -162,10 +162,10 @@ export class WebSerialTransport {
         }
 
         case State.NEED_READ: {
-          if (Date.now() > deadline) throw new TimeoutError();
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) throw new TimeoutError();
 
-          const { value } = await this.reader.read();
-          if (!value) throw new TimeoutError();
+          const value = await this.readWithTimeout(remaining);
 
           this.rxBuf = concat(this.rxBuf, value);
           state = State.TRY_EXTRACT;
@@ -175,6 +175,51 @@ export class WebSerialTransport {
         default:
           throw new Error("invalid state");
       }
+    }
+  }
+
+  private async resetReaderAfterTimeout() {
+    try {
+      await this.reader.cancel();
+    } catch {
+      // [[swallow]]
+    }
+
+    try {
+      this.reader.releaseLock();
+    } catch {
+      // [[swallow]]
+    }
+
+    this.reader = this.port.readable!.getReader();
+  }
+
+  private async readWithTimeout(ms: number): Promise<Uint8Array> {
+    const TIMEOUT = Symbol("timeout");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      const result = await Promise.race<
+        ReadableStreamReadResult<Uint8Array> | typeof TIMEOUT
+      >([
+        this.reader.read(),
+        new Promise<typeof TIMEOUT>((resolve) => {
+          timer = setTimeout(() => resolve(TIMEOUT), ms);
+        }),
+      ]);
+
+      if (result === TIMEOUT) {
+        await this.resetReaderAfterTimeout();
+        throw new TimeoutError();
+      }
+
+      if (result.done || !result.value) {
+        throw new TimeoutError();
+      }
+
+      return result.value;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
