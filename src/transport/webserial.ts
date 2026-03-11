@@ -1,6 +1,20 @@
-import { TimeoutError, CrcError, ResyncError } from "../core/errors.js";
+import { TimeoutError, CrcError, ResyncError, StreamClosedError } from "../core/errors.js";
 import { crc16 } from "../core/crc16.js";
-import { FC_MASK_WRITE_REGISTER, FC_READ_COILS, FC_READ_DISCRETE_INPUTS, FC_READ_FIFO_QUEUE, FC_READ_FILE_RECORD, FC_READ_HOLDING_REGISTERS, FC_READ_INPUT_REGISTERS, FC_READ_WRITE_MULTIPLE_REGISTERS, FC_WRITE_FILE_RECORD, FC_WRITE_MULTIPLE_COILS, FC_WRITE_MULTIPLE_HOLDING_REGISTERS, FC_WRITE_SINGLE_COIL, FC_WRITE_SINGLE_HOLDING_REGISTER } from "../core/types.js";
+import {
+  FC_MASK_WRITE_REGISTER,
+  FC_READ_COILS,
+  FC_READ_DISCRETE_INPUTS,
+  FC_READ_FIFO_QUEUE,
+  FC_READ_FILE_RECORD,
+  FC_READ_HOLDING_REGISTERS,
+  FC_READ_INPUT_REGISTERS,
+  FC_READ_WRITE_MULTIPLE_REGISTERS,
+  FC_WRITE_FILE_RECORD,
+  FC_WRITE_MULTIPLE_COILS,
+  FC_WRITE_MULTIPLE_HOLDING_REGISTERS,
+  FC_WRITE_SINGLE_COIL,
+  FC_WRITE_SINGLE_HOLDING_REGISTER,
+} from "../core/types.js";
 
 // ----------------------------------------------------------------
 //  User-visible options
@@ -14,6 +28,7 @@ export interface WebSerialOptions {
   port?: SerialPort;
   timeout?: number; // ms,
   crcPolicy?: CrcPolicy;
+  postTimeoutWaitPeriod?: number; // ms
 }
 
 /* CRC policy for resyncing versus throwing on bad frames */
@@ -41,6 +56,10 @@ export class WebSerialTransport {
 
   private strictCrc = true;
   private maxResyncDrops = DEFAULT_MAX_RESYNC_DROPS;
+
+  private postTimeoutWaitPeriod = 0;
+  private dirtyUntil = 0;
+  private inFlight = false;
 
   // timeout gelpers
   setTimeout(ms: number) {
@@ -88,95 +107,178 @@ export class WebSerialTransport {
       this.strictCrc = false;
       this.maxResyncDrops = policy.maxResyncDrops ?? DEFAULT_MAX_RESYNC_DROPS;
     }
+
+    // Timeout settings
+    this.postTimeoutWaitPeriod = opts.postTimeoutWaitPeriod ?? 0;
+
+    // Prefer 'performance.now()' over 'Date.now()'
+    // For some reason just defining a singleton for now
+    //  caused tests to break
+    if (typeof performance !== "undefined") {
+      this.now = () => performance.now();
+    }
   }
 
   // ----------------------------------------------------------------
   //  transact(): Send `req` and await a response whose function-code matches the request
   // ---------------------------------------------------------------- */
   async transact(req: Uint8Array): Promise<Uint8Array> {
-    await this.writer.write(req);
-
-    const STRICT_CRC = this.strictCrc;
-    const MAX_RESYNC_DROPS = this.maxResyncDrops; // interpreted as max discarded bytes
-
-    const expectedFC = req[1] & 0x7f;
-    const deadline = Date.now() + this.timeout;
-
-    enum State {
-      TRY_EXTRACT,
-      HAVE_FRAME,
-      BAD_CRC,
-      NEED_READ,
+    if (this.inFlight) {
+      throw new Error("Concurrent transact() calls are not supported");
     }
-    let state: State = State.TRY_EXTRACT;
 
-    let frame: Uint8Array | null = null;
-    let discardedBytes = 0;
+    this.inFlight = true;
+    try {
+      await this.waitOutDirtyPeriod();
+      await this.writer.write(req);
 
-    while (true) {
-      switch (state as State) {
-        case State.TRY_EXTRACT: {
-          frame = this.extractFrame();
-          if (!frame) {
-            state = State.NEED_READ;
-            break; // I/O next
-          }
+      const STRICT_CRC = this.strictCrc;
+      const MAX_RESYNC_DROPS = this.maxResyncDrops; // interpreted as max discarded bytes
 
-          state = State.HAVE_FRAME;
-          // [[fallthrough]] - frame ready, process immediately
-        }
+      const deadline = this.now() + this.timeout;
 
-        case State.HAVE_FRAME: {
-          if (this.crcOk(frame!)) {
-            const fc = frame![1] & 0x7f;
-            if (fc === expectedFC) return frame!;
-
-            frame = null;
-            state = State.TRY_EXTRACT;
-            continue;
-          }
-
-          state = State.BAD_CRC;
-          // [[fallthrough]]
-        }
-        case State.BAD_CRC: {
-          if (STRICT_CRC) throw new CrcError();
-
-          // Discarded a whole candidate frame (already popped from rxBuf).
-          discardedBytes += frame ? frame.length : 0;
-          frame = null;
-
-          if (discardedBytes >= MAX_RESYNC_DROPS) {
-            throw new ResyncError(discardedBytes, MAX_RESYNC_DROPS);
-          }
-
-          // IMPORTANT: do NOT drop 1 byte from rxBuf here.
-          // rxBuf may already begin with the next valid frame (bad+good in same chunk).
-          // Just continue parsing what remains.
-          if (this.rxBuf.length > 0) {
-            state = State.TRY_EXTRACT;
-            continue;
-          }
-
-          state = State.NEED_READ;
-          // [[fallthrough]]
-        }
-
-        case State.NEED_READ: {
-          const remaining = deadline - Date.now();
-          if (remaining <= 0) throw new TimeoutError();
-
-          const value = await this.readWithTimeout(remaining);
-
-          this.rxBuf = concat(this.rxBuf, value);
-          state = State.TRY_EXTRACT;
-          continue;
-        }
-
-        default:
-          throw new Error("invalid state");
+      enum State {
+        TRY_EXTRACT,
+        HAVE_FRAME,
+        BAD_CRC,
+        NEED_READ,
       }
+      let state: State = State.TRY_EXTRACT;
+
+      let frame: Uint8Array | null = null;
+      let discardedBytes = 0;
+
+      while (true) {
+        switch (state as State) {
+          case State.TRY_EXTRACT: {
+            frame = this.extractFrame();
+            if (!frame) {
+              state = State.NEED_READ;
+              break; // I/O next
+            }
+
+            state = State.HAVE_FRAME;
+            // [[fallthrough]] - frame ready, process immediately
+          }
+
+          case State.HAVE_FRAME: {
+            if (this.crcOk(frame!)) {
+              // If no mismatch -> return the frame
+              if (!proveRequestResponseMismatch(req, frame!)) return frame!;
+
+              frame = null;
+              state = State.TRY_EXTRACT;
+              continue;
+            }
+
+            state = State.BAD_CRC;
+            // [[fallthrough]]
+          }
+          case State.BAD_CRC: {
+            if (STRICT_CRC) throw new CrcError();
+
+            // Discarded a whole candidate frame (already popped from rxBuf).
+            discardedBytes += frame ? frame.length : 0;
+            frame = null;
+
+            if (discardedBytes >= MAX_RESYNC_DROPS) {
+              throw new ResyncError(discardedBytes, MAX_RESYNC_DROPS);
+            }
+
+            // IMPORTANT: do NOT drop 1 byte from rxBuf here.
+            // rxBuf may already begin with the next valid frame (bad+good in same chunk).
+            // Just continue parsing what remains.
+            if (this.rxBuf.length > 0) {
+              state = State.TRY_EXTRACT;
+              continue;
+            }
+
+            state = State.NEED_READ;
+            // [[fallthrough]]
+          }
+
+          case State.NEED_READ: {
+            const now = this.now();
+            const remaining = deadline - now;
+            if (remaining <= 0) throw new TimeoutError();
+
+            const value = await this.readWithTimeout(remaining);
+            this.rxBuf = concat(this.rxBuf, value);
+            state = State.TRY_EXTRACT;
+            continue;
+          }
+
+          default:
+            throw new Error("invalid state");
+        }
+      }
+    } finally {
+      this.inFlight = false;
     }
+  }
+  private static readonly TIMEOUT = Symbol("timeout");
+  private async readOnce(
+    maxMs: number,
+  ): Promise<
+    | { kind: "chunk"; value: Uint8Array }
+    | { kind: "timeout" }
+    | { kind: "closed" }
+  > {
+    if (maxMs <= 0) return { kind: "timeout" } as const;
+
+    const ms = Math.max(1, maxMs);
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race<
+        ReadableStreamReadResult<Uint8Array> | typeof WebSerialTransport.TIMEOUT
+      >([
+        this.reader.read(),
+        new Promise<typeof WebSerialTransport.TIMEOUT>((resolve) => {
+          timer = setTimeout(() => resolve(WebSerialTransport.TIMEOUT), ms);
+        }),
+      ]);
+
+      if (result === WebSerialTransport.TIMEOUT) return { kind: "timeout" } as const;
+      if (result.done || !result.value) return { kind: "closed" } as const;
+      return { kind: "chunk", value: result.value } as const;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  private async waitOutDirtyPeriod() {
+    for (;;) {
+      const now = this.now();
+      if (now >= this.dirtyUntil) return;
+
+      const remaining = this.dirtyUntil - now;
+      const r = await this.readOnce(remaining);
+
+      if (r.kind !== "chunk") break; // timeout or closed
+      // discard and continue draining
+    }
+
+    this.rxBuf = new Uint8Array(0);
+  }
+
+  private async readWithTimeout(ms: number): Promise<Uint8Array> {
+    const r = await this.readOnce(ms);
+
+    if (r.kind === "chunk") return r.value;
+
+    if (r.kind === "timeout") {
+      await this.resetReaderAfterTimeout();
+      this.rxBuf = new Uint8Array(0);
+      this.dirtyUntil = this.now() + this.postTimeoutWaitPeriod;
+      throw new TimeoutError();
+    }
+
+    if (r.kind === "closed") {
+      throw new StreamClosedError();
+    }
+
+    throw new Error("invalid read result");
   }
 
   private async resetReaderAfterTimeout() {
@@ -193,35 +295,6 @@ export class WebSerialTransport {
     }
 
     this.reader = this.port.readable!.getReader();
-  }
-
-  private async readWithTimeout(ms: number): Promise<Uint8Array> {
-    const TIMEOUT = Symbol("timeout");
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    try {
-      const result = await Promise.race<
-        ReadableStreamReadResult<Uint8Array> | typeof TIMEOUT
-      >([
-        this.reader.read(),
-        new Promise<typeof TIMEOUT>((resolve) => {
-          timer = setTimeout(() => resolve(TIMEOUT), ms);
-        }),
-      ]);
-
-      if (result === TIMEOUT) {
-        await this.resetReaderAfterTimeout();
-        throw new TimeoutError();
-      }
-
-      if (result.done || !result.value) {
-        throw new TimeoutError();
-      }
-
-      return result.value;
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
   }
 
   private extractFrame(): Uint8Array | null {
@@ -241,6 +314,10 @@ export class WebSerialTransport {
       (crc & 0xff) === frame[frame.length - 2] &&
       crc >> 8 === frame[frame.length - 1];
     return crcOk;
+  }
+
+  private now(): number {
+    return Date.now();
   }
 
   // ----------------------------------------------------------------
@@ -275,7 +352,13 @@ export class WebSerialTransport {
     }
 
     // Echo frames with fixed 8-byte length
-    if (fc === 0x05 || fc === 0x06 || fc === 0x0f || fc === 0x10)
+    if (
+      fc === 0x05 || // write single coil
+      fc === 0x06 || // write single register
+      fc === 0x0f || // write multiple coils
+      fc === 0x10 || // write multiple registers
+      fc === 0x16 // mask write register
+    )
       return buf.length >= 8 ? 8 : 0;
 
     // Unsupported FC – heuristic: fixed 8-byte candidate to enable CRC-based resync
@@ -290,7 +373,7 @@ export class WebSerialTransport {
 }
 
 /**
- * We cannot prove that a response matches a request, 
+ * We cannot prove that a response matches a request,
  * but we can prove a mismatch by:
  *  - Device address
  *  - Function code
@@ -300,10 +383,10 @@ export function proveRequestResponseMismatch(
   req: Uint8Array,
   res: Uint8Array,
 ): boolean {
-  if (req.length < 2 || res.length < 2) return true;
+  if (req.length < 2 || res.length < 2) return false;
 
   const reqAddr = req[0];
-  const reqFc = req[1];
+  const reqFc = req[1] & 0x7f;
 
   const resAddr = res[0];
   const resFc = res[1];
@@ -316,17 +399,15 @@ export function proveRequestResponseMismatch(
   if (resBaseFc !== reqFc) return true;
 
   // Exception response: addr, fc|0x80, excCode, crcLo, crcHi
+  // Same addr + same base FC + correct exception length is NOT a proven mismatch.
   if (resFc & 0x80) {
     return res.length !== 5;
   }
 
   switch (reqFc) {
-    // ------------------------------------------------------------
-    // Bit/word reads with response byte-count determined by quantity
-    // ------------------------------------------------------------
     case FC_READ_COILS:
     case FC_READ_DISCRETE_INPUTS: {
-      if (req.length < 6 || res.length < 3) return true;
+      if (req.length < 6 || res.length < 3) return false;
 
       const quantity = u16be(req, 4);
       const expectedByteCount = Math.ceil(quantity / 8);
@@ -339,7 +420,7 @@ export function proveRequestResponseMismatch(
 
     case FC_READ_HOLDING_REGISTERS:
     case FC_READ_INPUT_REGISTERS: {
-      if (req.length < 6 || res.length < 3) return true;
+      if (req.length < 6 || res.length < 3) return false;
 
       const quantity = u16be(req, 4);
       const expectedByteCount = quantity * 2;
@@ -350,16 +431,13 @@ export function proveRequestResponseMismatch(
       return false;
     }
 
-    // ------------------------------------------------------------
-    // Echo-style writes
-    // ------------------------------------------------------------
     case FC_WRITE_SINGLE_COIL:
     case FC_WRITE_SINGLE_HOLDING_REGISTER:
     case FC_MASK_WRITE_REGISTER: {
       // Response echoes request body (excluding CRC bytes)
-      if (req.length < 8 || res.length !== req.length) return true;
+      if (req.length < 8 || res.length < 8) return false;
+      if (res.length !== req.length) return true;
 
-      // addr+fc already checked, compare body up to CRC
       if (!bytesEqual(req, 2, res, 2, req.length - 4)) return true;
 
       return false;
@@ -368,7 +446,8 @@ export function proveRequestResponseMismatch(
     case FC_WRITE_MULTIPLE_COILS:
     case FC_WRITE_MULTIPLE_HOLDING_REGISTERS: {
       // Fixed 8-byte response: addr fc startHi startLo qtyHi qtyLo crcLo crcHi
-      if (req.length < 6 || res.length !== 8) return true;
+      if (req.length < 6 || res.length < 8) return false;
+      if (res.length !== 8) return true;
 
       // start address + quantity echoed back
       if (!bytesEqual(req, 2, res, 2, 4)) return true;
@@ -376,15 +455,8 @@ export function proveRequestResponseMismatch(
       return false;
     }
 
-    // ------------------------------------------------------------
-    // Read/Write Multiple Registers
-    // Response corresponds to READ quantity only
-    // ------------------------------------------------------------
     case FC_READ_WRITE_MULTIPLE_REGISTERS: {
-      // req layout:
-      // addr fc readStartHi readStartLo readQtyHi readQtyLo
-      //      writeStartHi writeStartLo writeQtyHi writeQtyLo byteCount ...
-      if (req.length < 10 || res.length < 3) return true;
+      if (req.length < 10 || res.length < 3) return false;
 
       const readQuantity = u16be(req, 4);
       const expectedByteCount = readQuantity * 2;
@@ -395,39 +467,26 @@ export function proveRequestResponseMismatch(
       return false;
     }
 
-    // ------------------------------------------------------------
-    // Read FIFO Queue
-    // Response:
-    // addr fc byteCountHi byteCountLo fifoCountHi fifoCountLo data... crcLo crcHi
-    // total length should be 4 + byteCount + 2
-    // byteCount includes fifoCount(2) + fifoData bytes
-    // ------------------------------------------------------------
     case FC_READ_FIFO_QUEUE: {
+      // No useful request-side proof here beyond addr/fc.
       if (res.length < 6) return true;
 
       const byteCount = u16be(res, 2);
 
-      if (byteCount < 2) return true; // must at least include fifoCount field
+      if (byteCount < 2) return true;
       if (res.length !== 4 + byteCount + 2) return true;
 
-      // Optional consistency: remaining FIFO data bytes should be even
       const fifoDataBytes = byteCount - 2;
       if (fifoDataBytes % 2 !== 0) return true;
 
       return false;
     }
 
-    // ------------------------------------------------------------
-    // File record functions
-    // We only prove structural mismatch cheaply here.
-    // ------------------------------------------------------------
     case FC_READ_FILE_RECORD:
     case FC_WRITE_FILE_RECORD: {
-      // Both replies begin with addr fc byteCount ...
       if (res.length < 5) return true;
 
       const byteCount = res[2];
-
       if (res.length !== 3 + byteCount + 2) return true;
 
       return false;
@@ -448,6 +507,7 @@ function concat(a: Uint8Array, b: Uint8Array) {
   out.set(b, a.length);
   return out;
 }
+
 function u16be(buf: Uint8Array, offset: number): number {
   return (buf[offset] << 8) | buf[offset + 1];
 }
