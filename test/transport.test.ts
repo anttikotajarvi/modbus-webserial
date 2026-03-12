@@ -23,7 +23,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { WebSerialTransport } from "../src/transport/webserial";
 import { crc16 } from "../src/core/crc16";
-import { CrcError, ResyncError, StreamClosedError, TimeoutError } from "../src/core/errors";
+import {
+  CrcError,
+  ResyncError,
+  StreamClosedError,
+  TimeoutError,
+} from "../src/core/errors";
 
 function buildResponse(frameBody: number[]): Uint8Array {
   const crc = crc16(Uint8Array.from(frameBody));
@@ -37,6 +42,7 @@ type FakeTransportOpts = {
   strictCrc?: boolean;
   maxResyncDrops?: number;
   postTimeoutWaitPeriod?: number;
+  interRequestDelay?: number;
 };
 
 type ReadStep =
@@ -64,6 +70,7 @@ function fakeTransport(steps: ReadStep[], opts: FakeTransportOpts = {}) {
   t.postTimeoutWaitPeriod = opts.postTimeoutWaitPeriod ?? 0;
   t.dirtyUntil = 0;
   t.inFlight = false;
+  t.interRequestDelay = opts.interRequestDelay ?? 0;
 
   // existing fields you already set
   t.timeout = opts.timeout ?? 50;
@@ -117,7 +124,9 @@ function fakeTransport(steps: ReadStep[], opts: FakeTransportOpts = {}) {
   t.__resolveNextRead = (value?: Uint8Array) => {
     const d = pendingReads.shift();
     if (!d) throw new Error("No pending read");
-    d.resolve(value ? { value, done: false } : { value: undefined, done: true });
+    d.resolve(
+      value ? { value, done: false } : { value: undefined, done: true },
+    );
   };
 
   return t as WebSerialTransport & {
@@ -361,10 +370,10 @@ describe("WebSerialTransport frame assembly", () => {
     // 4) after quarantine ends and request is written, next read returns 'good'
     const tr = fakeTransport(
       [
-        { type: "pending" },              // first transact read
-        { type: "chunk", value: stale },  // quarantine drain read #1
-        { type: "pending" },              // quarantine drain read #2 (lets time pass)
-        { type: "chunk", value: good },   // actual response for second transact
+        { type: "pending" }, // first transact read
+        { type: "chunk", value: stale }, // quarantine drain read #1
+        { type: "pending" }, // quarantine drain read #2 (lets time pass)
+        { type: "chunk", value: good }, // actual response for second transact
       ],
       { timeout: 50, postTimeoutWaitPeriod: 200 },
     );
@@ -391,10 +400,9 @@ describe("WebSerialTransport frame assembly", () => {
   it("with postTimeoutWaitPeriod=0, a late same-FC frame can satisfy the next call (documented behavior)", async () => {
     vi.useFakeTimers();
 
-    const tr = fakeTransport(
-      [{ type: "pending" }, { type: "pending" }],
-      { timeout: 100 },
-    );
+    const tr = fakeTransport([{ type: "pending" }, { type: "pending" }], {
+      timeout: 100,
+    });
     (tr as any).postTimeoutWaitPeriod = 0;
 
     const req = Uint8Array.from([1, 0x03]);
@@ -412,4 +420,60 @@ describe("WebSerialTransport frame assembly", () => {
 
     vi.useRealTimers();
   });
-});
+
+  it("interRequestDelay: does not delay the first request", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+
+    const req = Uint8Array.from([1, 0x03]);
+    const r1 = buildResponse([1, 0x03, 0x02, 0x12, 0x34]);
+
+    const tr = fakeTransport([r1], { interRequestDelay: 200, timeout: 1000 });
+    const write = vi.fn(async () => {});
+    (tr as any).writer.write = write;
+
+    const p = tr.transact(req);
+    // Let async code run a tick.
+    await Promise.resolve();
+
+    // Even with interRequestDelay, the *first* call should write immediately.
+    expect(write).toHaveBeenCalledTimes(1);
+    await expect(p).resolves.toEqual(r1);
+
+    vi.useRealTimers();
+  });
+
+  it("interRequestDelay: delays the next request write until the delay has elapsed", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+
+    const req = Uint8Array.from([1, 0x03]);
+    const r1 = buildResponse([1, 0x03, 0x02, 0xaa, 0x55]);
+    const r2 = buildResponse([1, 0x03, 0x02, 0xde, 0xad]);
+
+    const tr = fakeTransport([r1, r2], { interRequestDelay: 200, timeout: 1000 });
+    const write = vi.fn(async () => {});
+    (tr as any).writer.write = write;
+
+    // First request completes.
+    await expect(tr.transact(req)).resolves.toEqual(r1);
+    expect(write).toHaveBeenCalledTimes(1);
+
+    // Second request: should not write immediately.
+    const p2 = tr.transact(req);
+    await Promise.resolve();
+    expect(write).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(199);
+    await Promise.resolve();
+    expect(write).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await Promise.resolve();
+    expect(write).toHaveBeenCalledTimes(2);
+
+    await expect(p2).resolves.toEqual(r2);
+
+    vi.useRealTimers();
+  });
+  });

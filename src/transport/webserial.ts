@@ -29,6 +29,7 @@ export interface WebSerialOptions {
   timeout?: number; // ms,
   crcPolicy?: CrcPolicy;
   postTimeoutWaitPeriod?: number; // ms
+  interRequestDelay?: number; // ms
 }
 
 /* CRC policy for resyncing versus throwing on bad frames */
@@ -60,6 +61,10 @@ export class WebSerialTransport {
   private postTimeoutWaitPeriod = 0;
   private dirtyUntil = 0;
   private inFlight = false;
+
+  private interRequestDelay = 0;
+
+  private lastTransactionEnd = 0;
 
   // timeout gelpers
   setTimeout(ms: number) {
@@ -111,6 +116,8 @@ export class WebSerialTransport {
     // Timeout settings
     this.postTimeoutWaitPeriod = opts.postTimeoutWaitPeriod ?? 0;
 
+    this.interRequestDelay = opts.interRequestDelay ?? 0;
+
     // Prefer 'performance.now()' over 'Date.now()'
     // For some reason just defining a singleton for now
     //  caused tests to break
@@ -129,6 +136,13 @@ export class WebSerialTransport {
 
     this.inFlight = true;
     try {
+
+      // Inter-request delay
+      if (this.interRequestDelay > 0) {
+        const wait = this.lastTransactionEnd + this.interRequestDelay - this.now();
+        if (wait > 0) await sleep(wait);
+      }
+
       await this.waitOutDirtyPeriod();
       await this.writer.write(req);
 
@@ -214,6 +228,7 @@ export class WebSerialTransport {
       }
     } finally {
       this.inFlight = false;
+      this.lastTransactionEnd = this.now();
     }
   }
   private static readonly TIMEOUT = Symbol("timeout");
@@ -523,4 +538,8 @@ function bytesEqual(
     if (a[aStart + i] !== b[bStart + i]) return false;
   }
   return true;
+}
+
+async function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
