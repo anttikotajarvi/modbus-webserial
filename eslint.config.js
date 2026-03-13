@@ -17,7 +17,6 @@ export default [
 
   {
     files: ['**/*.ts', '**/*.tsx'],
-    filesExcluded: ['**/node_modules/**', '**/dist/**', 'tsup.config.ts'],
     plugins: { '@typescript-eslint': ts.plugin },
 
     languageOptions: {

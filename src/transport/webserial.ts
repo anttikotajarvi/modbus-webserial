@@ -110,7 +110,7 @@ export class WebSerialTransport {
 
   private async init(opts: WebSerialOptions) {
     // Override cfg
-    Object.entries(this.cfg).forEach(([key, defaultValue]) => {
+    Object.entries(this.cfg).forEach(([key, _]) => {
       if (typeof opts[key as keyof WebSerialConfig] !== "undefined") {
         (this.cfg as any)[key] = opts[key as keyof WebSerialConfig]!;
       }
