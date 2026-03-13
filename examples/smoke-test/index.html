@@ -1,102 +1,872 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8" />
-<title>modbus-webserial - 64-Register Smoke Test</title>
-<style>
-  body{font-family:system-ui,sans-serif;margin:1.5rem 2rem}
-  button{padding:.4rem .9rem;font-size:1rem;margin-right:.6rem}
-  #status{font-weight:600}
-  #elapsed{font-variant-numeric:tabular-nums}
-  #errors{border:1px solid #c33;background:#fee;padding:.6rem;margin-top:1rem;
-          max-height:9rem;overflow:auto;font-size:.9rem}
-  #plan{background:#f7f7f7;border:1px solid #aaa;padding:.8rem 1rem;margin-top:1rem}
+  <head>
+    <meta charset="UTF-8" />
+    <title>modbus-webserial - 64-Register Smoke Test</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 1.5rem 2rem;
+      }
+      button {
+        padding: 0.4rem 0.9rem;
+        font-size: 1rem;
+        margin-right: 0.6rem;
+      }
+      #status {
+        font-weight: 600;
+      }
+      #elapsed {
+        font-variant-numeric: tabular-nums;
+      }
+      #errors {
+        border: 1px solid #c33;
+        background: #fee;
+        padding: 0.6rem;
+        margin-top: 1rem;
+        max-height: 9rem;
+        overflow: auto;
+        font-size: 0.9rem;
+      }
+      #plan {
+        background: #f7f7f7;
+        border: 1px solid #aaa;
+        padding: 0.8rem 1rem;
+        margin-top: 1rem;
+      }
 
-  ol{margin:.4rem 0 .7rem 1.2rem}
-  .count{font-size:.85rem;color:#0a0;font-weight:600}
-  code{background:#eee;padding:.08rem .25rem;border-radius:.25rem}
-</style>
-</head>
-<body>
-<h1>modbus-webserial / Smoke test (64 words / 64 bits)</h1>
+      ol {
+        margin: 0.4rem 0 0.7rem 1.2rem;
+      }
+      .count {
+        font-size: 0.85rem;
+        color: #0a0;
+        font-weight: 600;
+      }
+      code {
+        background: #eee;
+        padding: 0.08rem 0.25rem;
+        border-radius: 0.25rem;
+      }
 
-<button id="btnConnect">🔌 Connect</button>
-<button id="btnStart" disabled>Start</button>
-<button id="btnStop"  disabled>Stop</button>
-<span id="status"></span>
+      .row {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 0.6rem;
+      }
 
-<p>Elapsed: <span id="elapsed">0 s</span></p>
+      /* Form styling */
+      #cfgWrap {
+        margin-top: 1rem;
+        max-width: 70rem;
+      }
+      fieldset {
+        border: 1px solid #aaa;
+        border-radius: 0.5rem;
+        padding: 0.8rem 1rem;
+        background: #fafafa;
+      }
+      legend {
+        padding: 0 0.4rem;
+        font-weight: 700;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(12rem, 1fr));
+        gap: 0.8rem 1rem;
+        align-items: end;
+      }
+      @media (max-width: 1100px) {
+        .grid {
+          grid-template-columns: repeat(2, minmax(12rem, 1fr));
+        }
+      }
+      @media (max-width: 650px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        font-size: 0.95rem;
+      }
+      input,
+      select {
+        padding: 0.35rem 0.45rem;
+        border: 1px solid #aaa;
+        border-radius: 0.35rem;
+        font-size: 1rem;
+        background: white;
+      }
+      .hint {
+        font-size: 0.9rem;
+        color: #444;
+        margin: 0.35rem 0 0;
+      }
+      .mono {
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+      }
+      #optsPreview {
+        margin-top: 0.6rem;
+        border: 1px solid #ddd;
+        background: #fff;
+        padding: 0.6rem;
+        border-radius: 0.4rem;
+        font-size: 0.9rem;
+        overflow: auto;
+        max-height: 10rem;
+        white-space: pre;
+      }
+      .actions {
+        display: flex;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+        margin-top: 0.8rem;
+        align-items: center;
+      }
+      .actions button {
+        margin-right: 0;
+      }
+      .pill {
+        display: inline-block;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        font-size: 0.85rem;
+        border: 1px solid #bbb;
+        background: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>modbus-webserial / Smoke test (64 words / 64 bits)</h1>
 
-<div>
-  <label for="desc"><b>Description</b></label>
-  <p id="desc">
-    How it runs: <br>
-    - Click Connect to open a WebSerial Modbus RTU client (one request at a time).<br>
-    - Click Start to run a full "runOnce()" test cycle repeatedly.<br>
-    - Each cycle performs many Modbus function calls (bulk + lots of single reads/writes).<br>
-    - The Delay value is applied ONLY between cycles:<br>
-        while (running) { await runOnce(); await sleep(delayMs); }
-  </p>
-</div>
+    <button id="btnConnect">🔌 Connect</button>
+    <button id="btnStart" disabled>Start</button>
+    <button id="btnStop" disabled>Stop</button>
+    <span id="status"></span>
 
-<div id="errors" hidden></div>
+    <p>Elapsed: <span id="elapsed">0 s</span></p>
 
-<label style="margin-left:1rem">
-  Delay&nbsp;<input id="delay" type="number" min="0" step="1" value="1000" style="width:6rem"> ms
-</label>
+    <div>
+      <label for="desc"><b>Description</b></label>
+      <p id="desc">
+        - Connect opens a WebSerial Modbus RTU client.<br />
+        - Apply (in settings) re-opens the client using the current settings,
+        reusing the same port.<br />
+        - Start runs a full "runOnce()" test cycle repeatedly.<br />
+        - Delay below is applied only between cycles.<br />
+        - If repeated errors: apply <code>interRequestDelay</code> of a few ms
+      </p>
+    </div>
 
-<div id="plan">
-<strong>Loop interval: <span id="interval">1.0&nbsp;s</span></strong>
-<ol>
-  <li><b>Holding registers&nbsp;(0&nbsp;–&nbsp;63)</b>
-    &nbsp;&nbsp;<span class="count" id="cnt1">0</span></li>
+    <div id="errors" hidden></div>
 
-      &nbsp;&nbsp;• <code>FC&nbsp;16</code> bulk-write <i>64 words</i>&nbsp;0…63<br>
-      &nbsp;&nbsp;• <code>FC&nbsp;03</code> bulk-read verify<br>
-      &nbsp;&nbsp;• <code>FC&nbsp;06</code> single-write each word (reverse order)<br>
-      &nbsp;&nbsp;• <code>FC&nbsp;03</code> read back in&nbsp;8-word chunks verify
+    <div class="row">
+      <label style="margin-left: 0">
+        Delay&nbsp;<input
+          id="delay"
+          type="number"
+          min="0"
+          step="1"
+          value="1000"
+          style="width: 6rem"
+        />
+        ms
+      </label>
 
-  <li><b>Input registers&nbsp;(0&nbsp;–&nbsp;63)</b>
-      &nbsp;&nbsp;<span class="count" id="cnt2">0</span></li>
+      <strong>Loop interval: <span id="interval">1.0&nbsp;s</span></strong>
+    </div>
 
-      &nbsp;&nbsp;• <code>FC&nbsp;04</code> one-shot read all 64<br>
-      &nbsp;&nbsp;• <code>FC&nbsp;04</code> 8-word chunk reads (8&nbsp;×&nbsp;8)<br>
-      &nbsp;&nbsp;• <code>FC&nbsp;04</code> 64 single-word reads (1&nbsp;×&nbsp;64) — compare all three results
+    <div id="cfgWrap">
+      <fieldset>
+        <legend>WebSerialConfig</legend>
 
-  <li><b>Coils&nbsp;(0&nbsp;–&nbsp;63)</b>
-      &nbsp;&nbsp;<span class="count" id="cnt3">0</span></li>
+        <div class="grid">
+          <label>
+            baudRate
+            <input id="cfg_baudRate" type="number" min="1" step="1" />
+          </label>
 
-      &nbsp;&nbsp;• <code>FC&nbsp;0F</code> write-multiple T F T F … pattern<br>
-      &nbsp;&nbsp;• <code>FC&nbsp;01</code> bulk-read verify pattern<br>
-      &nbsp;&nbsp;• <code>FC&nbsp;05</code> toggle each coil individually<br>
-      &nbsp;&nbsp;• <code>FC&nbsp;01</code> 8-byte chunk reads verify new pattern
+          <label>
+            dataBits
+            <select id="cfg_dataBits">
+              <option value="7">7</option>
+              <option value="8">8</option>
+            </select>
+          </label>
 
-  <li><b>Discrete inputs&nbsp;(0&nbsp;–&nbsp;63)</b>
-      &nbsp;&nbsp;<span class="count" id="cnt4">0</span></li>
+          <label>
+            stopBits
+            <select id="cfg_stopBits">
+              <option value="1">1</option>
+              <option value="2">2</option>
+            </select>
+          </label>
 
-      &nbsp;&nbsp;• <code>FC&nbsp;02</code> one-shot read all 64<br>
-      &nbsp;&nbsp;• <code>FC&nbsp;02</code> 8-byte chunk reads (8&nbsp;×&nbsp;8)<br>
-      &nbsp;&nbsp;• <code>FC&nbsp;02</code> 64 single-bit reads — compare all three results
-</ol>
-<b>Errors</b> appear with their sub-step tag (e.g.&nbsp;“3-c”), counters tick after
-each major step completes without error.
-</div>
+          <label>
+            parity
+            <select id="cfg_parity">
+              <option value="none">none</option>
+              <option value="even">even</option>
+              <option value="odd">odd</option>
+            </select>
+          </label>
 
-<details style="margin-top:1.2rem">
-  <summary style="cursor:pointer;font-weight:600">
-    Example Arduino sketch (ATmega32u4 over USB CDC, 64 regs/64 bits)
-  </summary>
-  <pre style="background:#f0f0f0;border:1px solid #bbb;
-              padding:.8rem;overflow:auto;max-height:20rem;font-size:.85rem">
+          <label>
+            timeout (ms)
+            <input id="cfg_timeout" type="number" min="0" step="1" />
+          </label>
+
+          <label>
+            postTimeoutWaitPeriod (ms)
+            <input
+              id="cfg_postTimeoutWaitPeriod"
+              type="number"
+              min="0"
+              step="1"
+            />
+          </label>
+
+          <label>
+            interRequestDelay (ms)
+            <input id="cfg_interRequestDelay" type="number" min="0" step="1" />
+          </label>
+
+          <label>
+            crcPolicy
+            <select id="cfg_crcMode">
+              <option value="strict">strict</option>
+              <option value="resync">resync</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="btnApply" type="button" disabled>Apply settings</button>
+          <button id="btnResetDefaults" type="button">Reset to defaults</button>
+          <span class="pill" id="portStatus">Port: none</span>
+          <span class="hint" id="cfgNote"></span>
+        </div>
+
+        <p class="hint">
+          Preview below is the exact object passed to
+          <code>ModbusRTU.openWebSerial(opts)</code>.
+          <br />
+          CRC policy only chooses <code>strict</code> vs <code>resync</code>;
+          <code>maxResyncDrops</code> is always set to the default.
+        </p>
+
+        <pre id="optsPreview" class="mono"></pre>
+      </fieldset>
+    </div>
+
+    <div id="plan">
+      <ol>
+        <li>
+          <b>Holding registers&nbsp;(0&nbsp;–&nbsp;63)</b> &nbsp;&nbsp;<span
+            class="count"
+            id="cnt1"
+            >0</span
+          >
+        </li>
+        &nbsp;&nbsp;•
+        <code>FC&nbsp;16</code>
+        bulk-write
+        <i>64 words</i>
+        0…63<br />
+        &nbsp;&nbsp;•
+        <code>FC&nbsp;03</code>
+        bulk-read verify<br />
+        &nbsp;&nbsp;•
+        <code>FC&nbsp;06</code>
+        single-write each word (reverse order)<br />
+        &nbsp;&nbsp;•
+        <code>FC&nbsp;03</code>
+        read back in 8-word chunks verify
+
+        <li>
+          <b>Input registers&nbsp;(0&nbsp;–&nbsp;63)</b> &nbsp;&nbsp;<span
+            class="count"
+            id="cnt2"
+            >0</span
+          >
+        </li>
+        &nbsp;&nbsp;•
+        <code>FC&nbsp;04</code>
+        one-shot read all 64<br />
+        &nbsp;&nbsp;•
+        <code>FC&nbsp;04</code>
+        8-word chunk reads (8×8)<br />
+        &nbsp;&nbsp;•
+        <code>FC&nbsp;04</code>
+        64 single-word reads — compare all three results
+
+        <li>
+          <b>Coils&nbsp;(0&nbsp;–&nbsp;63)</b> &nbsp;&nbsp;<span
+            class="count"
+            id="cnt3"
+            >0</span
+          >
+        </li>
+        &nbsp;&nbsp;•
+        <code>FC&nbsp;0F</code>
+        write-multiple T F T F … pattern<br />
+        &nbsp;&nbsp;•
+        <code>FC&nbsp;01</code>
+        bulk-read verify pattern<br />
+        &nbsp;&nbsp;•
+        <code>FC&nbsp;05</code>
+        toggle each coil individually<br />
+        &nbsp;&nbsp;•
+        <code>FC&nbsp;01</code>
+        8-byte chunk reads verify new pattern
+
+        <li>
+          <b>Discrete inputs&nbsp;(0&nbsp;–&nbsp;63)</b> &nbsp;&nbsp;<span
+            class="count"
+            id="cnt4"
+            >0</span
+          >
+        </li>
+        &nbsp;&nbsp;•
+        <code>FC&nbsp;02</code>
+        one-shot read all 64<br />
+        &nbsp;&nbsp;•
+        <code>FC&nbsp;02</code>
+        8-byte chunk reads (8×8)<br />
+        &nbsp;&nbsp;•
+        <code>FC&nbsp;02</code>
+        64 single-bit reads — compare all three results
+      </ol>
+
+      <b>Errors</b> appear with their sub-step tag (e.g. “3-c”), counters tick
+      after each major step completes without error.
+    </div>
+
+    <script>
+      // Allow importing modbus-webserial from a custom URL
+      const params = new URLSearchParams(location.search);
+      const src =
+        params.get("src") ?? "https://unpkg.com/modbus-webserial/dist/index.js";
+
+      const map = {
+        imports: {
+          "modbus-webserial": src,
+        },
+      };
+
+      const el = document.createElement("script");
+      el.type = "importmap";
+      el.textContent = JSON.stringify(map);
+      document.currentScript.after(el);
+
+      window.__modbusSource = src;
+      console.log("loading modbus-webserial from:", src);
+    </script>
+
+    <script type="module">
+      import { ModbusRTU, BUILD_INFO } from "modbus-webserial";
+
+      // ----------------------------------------------------------------
+      // Defaults mirroring the library
+      // ----------------------------------------------------------------
+      const DEFAULT_MAX_RESYNC_DROPS = 32;
+
+      const DEFAULTS = {
+        baudRate: 9600,
+        dataBits: 8,
+        stopBits: 1,
+        parity: "none",
+        timeout: 500,
+        crcPolicy: { mode: "strict" },
+        postTimeoutWaitPeriod: 0,
+        interRequestDelay: 0,
+      };
+
+      // ----------------------------------------------------------------
+      // DOM / globals
+      // ----------------------------------------------------------------
+      const TOTAL = 64;
+      const $ = (id) => document.getElementById(id);
+
+      const btnConnect = $("btnConnect");
+      const btnApply = $("btnApply");
+      const btnStart = $("btnStart");
+      const btnStop = $("btnStop");
+      const btnResetDefaults = $("btnResetDefaults");
+
+      const status = $("status");
+      const elapsed = $("elapsed");
+      const errors = $("errors");
+      const cnt = [$("cnt1"), $("cnt2"), $("cnt3"), $("cnt4")];
+
+      const delayInput = $("delay");
+      const intervalSpan = $("interval");
+
+      const preview = $("optsPreview");
+      const cfgNote = $("cfgNote");
+      const portStatus = $("portStatus");
+
+      // Form controls
+      const f_baudRate = $("cfg_baudRate");
+      const f_dataBits = $("cfg_dataBits");
+      const f_stopBits = $("cfg_stopBits");
+      const f_parity = $("cfg_parity");
+      const f_timeout = $("cfg_timeout");
+      const f_postTimeoutWaitPeriod = $("cfg_postTimeoutWaitPeriod");
+      const f_interRequestDelay = $("cfg_interRequestDelay");
+      const f_crcMode = $("cfg_crcMode");
+
+      // client + retained port
+      let cli = null;
+      /** @type {SerialPort|null} */
+      let retainedPort = null;
+
+      let timer = null;
+      let sec = 0;
+      let running = false;
+
+      // ----------------------------------------------------------------
+      // Small utils
+      // ----------------------------------------------------------------
+      const setStatus = (t, ok = true) => {
+        status.textContent = t;
+        status.style.color = ok ? "green" : "crimson";
+      };
+
+      function setPortStatus() {
+        portStatus.textContent = retainedPort ? "Port: retained" : "Port: none";
+      }
+
+      function logErr(tag, msg) {
+        errors.hidden = false;
+        const time = new Date().toLocaleTimeString();
+        errors.innerHTML =
+          `[${time}] <b>${tag}</b> ${msg}<br>` + errors.innerHTML;
+        const lines = errors.innerHTML.split("<br>");
+        if (lines.length > 100) {
+          errors.innerHTML = lines.slice(0, 100).join("<br>");
+        }
+      }
+
+      function sleep(ms) {
+        return new Promise((r) => setTimeout(r, ms));
+      }
+
+      function setConfigLocked(locked) {
+        const fields = [
+          f_baudRate,
+          f_dataBits,
+          f_stopBits,
+          f_parity,
+          f_timeout,
+          f_postTimeoutWaitPeriod,
+          f_interRequestDelay,
+          f_crcMode,
+          btnResetDefaults,
+          btnApply,
+        ];
+        for (const el of fields) el.disabled = locked;
+
+        // Apply should be locked while running, but enabled when connected+not running.
+        if (!locked) {
+          btnApply.disabled = !cli; // only enabled if connected and not running
+        }
+      }
+
+      // Loop interval display
+      intervalSpan.textContent = (delayInput.value / 1000).toFixed(1) + " s";
+      delayInput.oninput = () => {
+        const ms = Math.max(0, parseInt(delayInput.value, 10) || 0);
+        intervalSpan.textContent = (ms / 1000).toFixed(1) + " s";
+      };
+
+      // ----------------------------------------------------------------
+      // Config form <-> options
+      // ----------------------------------------------------------------
+      function loadFormFromDefaults() {
+        f_baudRate.value = String(DEFAULTS.baudRate);
+        f_dataBits.value = String(DEFAULTS.dataBits);
+        f_stopBits.value = String(DEFAULTS.stopBits);
+        f_parity.value = DEFAULTS.parity;
+        f_timeout.value = String(DEFAULTS.timeout);
+        f_postTimeoutWaitPeriod.value = String(DEFAULTS.postTimeoutWaitPeriod);
+        f_interRequestDelay.value = String(DEFAULTS.interRequestDelay);
+        f_crcMode.value = DEFAULTS.crcPolicy.mode;
+        updatePreview();
+      }
+
+      function readInt(inputEl, name) {
+        const raw = String(inputEl.value ?? "").trim();
+        if (raw === "") throw new Error(`${name} is required`);
+        const n = Number(raw);
+        if (!Number.isFinite(n) || !Number.isInteger(n)) {
+          throw new Error(`${name} must be an integer`);
+        }
+        return n;
+      }
+
+      function buildOptionsFromForm() {
+        const cfg = {
+          ...DEFAULTS,
+          baudRate: readInt(f_baudRate, "baudRate"),
+          dataBits: Number(f_dataBits.value),
+          stopBits: Number(f_stopBits.value),
+          parity: f_parity.value,
+          timeout: readInt(f_timeout, "timeout"),
+          postTimeoutWaitPeriod: readInt(
+            f_postTimeoutWaitPeriod,
+            "postTimeoutWaitPeriod",
+          ),
+          interRequestDelay: readInt(f_interRequestDelay, "interRequestDelay"),
+          crcPolicy:
+            f_crcMode.value === "resync"
+              ? { mode: "resync", maxResyncDrops: DEFAULT_MAX_RESYNC_DROPS }
+              : { mode: "strict" },
+        };
+
+        if (cfg.dataBits !== 7 && cfg.dataBits !== 8)
+          throw new Error("dataBits must be 7 or 8");
+        if (cfg.stopBits !== 1 && cfg.stopBits !== 2)
+          throw new Error("stopBits must be 1 or 2");
+        if (
+          cfg.parity !== "none" &&
+          cfg.parity !== "even" &&
+          cfg.parity !== "odd"
+        ) {
+          throw new Error('parity must be "none", "even", or "odd"');
+        }
+        if (cfg.timeout < 0) throw new Error("timeout must be >= 0");
+        if (cfg.postTimeoutWaitPeriod < 0)
+          throw new Error("postTimeoutWaitPeriod must be >= 0");
+        if (cfg.interRequestDelay < 0)
+          throw new Error("interRequestDelay must be >= 0");
+
+        return cfg;
+      }
+
+      function updatePreview() {
+        try {
+          const opts = buildOptionsFromForm();
+          preview.textContent = JSON.stringify(opts, null, 2);
+          preview.style.borderColor = "#ddd";
+          cfgNote.textContent = "";
+        } catch (e) {
+          const msg =
+            e && typeof e.message === "string" ? e.message : String(e);
+          preview.textContent = `⚠ ${msg}`;
+          preview.style.borderColor = "#c33";
+          cfgNote.textContent = msg;
+        }
+      }
+
+      // update preview when any field changes
+      const watch = [
+        f_baudRate,
+        f_dataBits,
+        f_stopBits,
+        f_parity,
+        f_timeout,
+        f_postTimeoutWaitPeriod,
+        f_interRequestDelay,
+        f_crcMode,
+      ];
+      for (const el of watch) {
+        el.addEventListener("input", updatePreview);
+        el.addEventListener("change", updatePreview);
+      }
+
+      btnResetDefaults.onclick = () => {
+        loadFormFromDefaults();
+        setStatus("Defaults loaded", true);
+      };
+
+      loadFormFromDefaults();
+      setPortStatus();
+
+      // ----------------------------------------------------------------
+      // Port retention helpers
+      // ----------------------------------------------------------------
+      function tryExtractPortFromClient(client) {
+        // Best-effort: this depends on your public API shape.
+        // We try a few common places without throwing.
+        try {
+          if (client && client.port) return client.port;
+        } catch (_) {}
+        try {
+          if (client && client.transport && client.transport.port)
+            return client.transport.port;
+        } catch (_) {}
+        try {
+          if (client && client._transport && client._transport.port)
+            return client._transport.port;
+        } catch (_) {}
+        return null;
+      }
+
+      async function closeClientIfPossible() {
+        try {
+          if (cli && typeof cli.close === "function") {
+            await cli.close();
+          }
+        } catch (_) {
+          // ignore
+        }
+        cli = null;
+      }
+
+      async function openClientFromForm({ reusePort } = { reusePort: false }) {
+        const cfg = buildOptionsFromForm();
+
+        const opts = { ...cfg };
+        if (reusePort && retainedPort) {
+          opts.port = retainedPort;
+        }
+
+        await closeClientIfPossible();
+
+        // If opts.port is set, the library should reuse it and avoid a picker.
+        // If not, browser picker will appear.
+        const client = await ModbusRTU.openWebSerial(opts);
+
+        // retain port from the newly opened client
+        retainedPort = tryExtractPortFromClient(client) ?? retainedPort;
+        setPortStatus();
+
+        client.setID(1);
+        cli = client;
+
+        // Apply enabled once connected (unless running lock overrides it)
+        btnApply.disabled = false;
+      }
+
+      // ----------------------------------------------------------------
+      // Connect / Apply
+      // ----------------------------------------------------------------
+      btnConnect.onclick = async () => {
+        try {
+          // First connect: no retained port yet => will show picker
+          await openClientFromForm({ reusePort: true });
+          setStatus("Connected");
+          btnStart.disabled = false;
+          btnConnect.disabled = true;
+          btnApply.disabled = false;
+        } catch (e) {
+          const msg =
+            e && typeof e.message === "string" ? e.message : String(e);
+          setStatus(msg, false);
+        }
+      };
+
+      btnApply.onclick = async () => {
+        if (running) return; // locked by UI anyway
+
+        try {
+          // Apply: reuse the retained port. If we couldn't capture it,
+          // this will fall back to picker behavior.
+          await openClientFromForm({ reusePort: true });
+
+          if (!retainedPort) {
+            setStatus(
+              "Applied (port picker may appear because port could not be retained)",
+              false,
+            );
+          } else {
+            setStatus("Applied (reconnected)");
+          }
+        } catch (e) {
+          const msg =
+            e && typeof e.message === "string" ? e.message : String(e);
+          setStatus(msg, false);
+        }
+      };
+
+      // ----------------------------------------------------------------
+      // Start / Stop
+      // ----------------------------------------------------------------
+      btnStart.onclick = () => {
+        btnStart.disabled = true;
+        btnStop.disabled = false;
+
+        errors.innerHTML = "";
+        errors.hidden = true;
+        cnt.forEach((c) => (c.textContent = "0"));
+
+        sec = 0;
+        elapsed.textContent = "0 s";
+        timer = setInterval(() => (elapsed.textContent = `${++sec} s`), 1000);
+
+        running = true;
+
+        // lock config + apply while running
+        setConfigLocked(true);
+
+        runLoop();
+      };
+
+      btnStop.onclick = () => {
+        running = false;
+        clearInterval(timer);
+
+        btnStart.disabled = false;
+        btnStop.disabled = true;
+
+        // unlock config + apply (apply only if connected)
+        setConfigLocked(false);
+
+        setStatus("Stopped", true);
+      };
+
+      async function runLoop() {
+        while (running) {
+          await runOnce().catch(console.error);
+          const ms = Math.max(0, parseInt(delayInput.value, 10) || 0);
+          await sleep(ms);
+        }
+      }
+
+      // ----------------------------------------------------------------
+      // Single iteration
+      // ----------------------------------------------------------------
+      async function runOnce() {
+        let step = "?";
+        try {
+          // 1. Holding registers
+          const vals = [...Array(TOTAL).keys()];
+          step = "1-a";
+          await cli.writeRegisters(0, vals);
+          step = "1-b";
+          if (
+            !(await cli.readHoldingRegisters(0, TOTAL)).data.every(
+              (v, i) => v === i,
+            )
+          ) {
+            throw new Error("bulk mismatch");
+          }
+          step = "1-c";
+          for (let i = TOTAL - 1; i >= 0; i--)
+            await cli.writeRegister(i, vals[i]);
+          step = "1-d";
+          for (let blk = 0; blk < TOTAL / 8; blk++) {
+            const { data } = await cli.readHoldingRegisters(blk * 8, 8);
+            for (let j = 0; j < 8; j++) {
+              if (data[j] !== blk * 8 + j) throw new Error(`chunk ${blk}`);
+            }
+          }
+          cnt[0].textContent = +cnt[0].textContent + 1;
+
+          // 2. Input registers
+          step = "2-a";
+          const IRa = (await cli.readInputRegisters(0, TOTAL)).data;
+          step = "2-b";
+          const IRb = [];
+          for (let blk = 0; blk < TOTAL / 8; blk++) {
+            IRb.push(...(await cli.readInputRegisters(blk * 8, 8)).data);
+          }
+          step = "2-c";
+          const IRc = [];
+          for (let i = 0; i < TOTAL; i++) {
+            IRc.push(...(await cli.readInputRegisters(i, 1)).data);
+          }
+          if (
+            JSON.stringify(IRa) !== JSON.stringify(IRb) ||
+            JSON.stringify(IRa) !== JSON.stringify(IRc)
+          ) {
+            throw new Error("IR mismatch");
+          }
+          cnt[1].textContent = +cnt[1].textContent + 1;
+
+          // 3. Coils
+          const pat = Array.from({ length: TOTAL }, (_, i) => !(i & 1));
+          step = "3-a";
+          await cli.writeCoils(0, pat);
+          step = "3-b";
+          if (
+            JSON.stringify((await cli.readCoils(0, TOTAL)).data) !==
+            JSON.stringify(pat)
+          ) {
+            throw new Error("coil bulk mismatch");
+          }
+          step = "3-c";
+          for (let i = 0; i < TOTAL; i++) await cli.writeCoil(i, !pat[i]);
+          step = "3-d";
+          const chk = [];
+          for (let blk = 0; blk < TOTAL / 8; blk++) {
+            chk.push(...(await cli.readCoils(blk * 8, 8)).data);
+          }
+          if (!chk.every((v, i) => v === !pat[i]))
+            throw new Error("coil chunk mismatch");
+          cnt[2].textContent = +cnt[2].textContent + 1;
+
+          // 4. Discrete inputs
+          step = "4-a";
+          const D0 = (await cli.readDiscreteInputs(0, TOTAL)).data;
+          step = "4-b";
+          const D1 = [];
+          for (let blk = 0; blk < TOTAL / 8; blk++) {
+            D1.push(...(await cli.readDiscreteInputs(blk * 8, 8)).data);
+          }
+          step = "4-c";
+          const D2 = [];
+          for (let i = 0; i < TOTAL; i++) {
+            D2.push(...(await cli.readDiscreteInputs(i, 1)).data);
+          }
+          if (
+            JSON.stringify(D0) !== JSON.stringify(D1) ||
+            JSON.stringify(D0) !== JSON.stringify(D2)
+          ) {
+            throw new Error("DI mismatch");
+          }
+          cnt[3].textContent = +cnt[3].textContent + 1;
+        } catch (e) {
+          const msg =
+            e && typeof e.message === "string" ? e.message : String(e);
+          logErr(step, msg);
+        }
+      }
+
+      // ----------------------------------------------------------------
+      // Footer info
+      // ----------------------------------------------------------------
+      const footer = document.getElementById("build-info");
+      if (footer) {
+        const src = window.__modbusSource ?? "unknown";
+        const hash = BUILD_INFO?.commit ?? "unknown";
+        const version = BUILD_INFO?.version ?? "unknown";
+        const time = BUILD_INFO?.buildTime ?? "unknown";
+        footer.textContent = `modbus-webserial v${version} | build ${hash} | ${time} | loaded from ${src}`;
+      }
+    </script>
+
+    <details style="margin-top: 1.2rem">
+      <summary style="cursor: pointer; font-weight: 600">
+        Example Arduino sketch (ATmega32u4 over USB CDC, 64 regs/64 bits)
+      </summary>
+      <pre
+        style="
+          background: #f0f0f0;
+          border: 1px solid #bbb;
+          padding: 0.8rem;
+          overflow: auto;
+          max-height: 20rem;
+          font-size: 0.85rem;
+        "
+      >
 #include &lt;Arduino.h&gt;
 
 // Some AVR cores don't define HAVE_CDCSERIAL even though USBCON exists.
-// This makes ModbusRTUSlave(Serial_&amp;) available on ATmega32u4 (Leonardo/Micro/Pro Micro).
-#if defined(USBCON) &amp;&amp; !defined(HAVE_CDCSERIAL)
+// This makes ModbusRTUSlave(Serial_&) available on ATmega32u4 (Leonardo/Micro/Pro Micro).
+#if defined(USBCON) && !defined(HAVE_CDCSERIAL)
   #define HAVE_CDCSERIAL
 #endif
 
-#include &lt;ModbusRTUSlave.h&gt;
+#include <ModbusRTUSlave.h>
 
 constexpr uint8_t  SLAVE_ID = 1;
 constexpr uint32_t BAUD     = 9600;
@@ -108,159 +878,89 @@ bool     coils      [64];
 bool     discretes  [64];
 
 // Force USB-CDC serial (Serial_) on 32u4
-ModbusRTUSlave mb((Serial_&amp;)Serial);
+ModbusRTUSlave mb(Serial);
 
 void setup() {
   Serial.begin(BAUD);
 
   // Don't block forever; browser opens the port when ready
   unsigned long t0 = millis();
-  while (!Serial &amp;&amp; (millis() - t0) &lt; 2000) {}
+  while (!Serial && (millis() - t0) < 2000) {}
 
   mb.configureHoldingRegisters(holdingRegs,  64);
   mb.configureInputRegisters  (inputRegs,    64);
   mb.configureCoils           (coils,        64);
   mb.configureDiscreteInputs  (discretes,    64);
 
-  // Baud doesn't change USB speed, but the library uses it for RTU timing/timeout math.
   mb.begin(SLAVE_ID, BAUD, SERIAL_8N1);
 }
 
 void loop() {
   mb.poll();
 }
-  </pre>
-</details>
+  </pre
+      >
+    </details>
+        <details style="margin-top: 1.2rem">
+      <summary style="cursor: pointer; font-weight: 600">
+        Example Arduino sketch (SAMD21 over USB CDC, 64 regs/64 bits)
+      </summary>
+      <pre
+        style="
+          background: #f0f0f0;
+          border: 1px solid #bbb;
+          padding: 0.8rem;
+          overflow: auto;
+          max-height: 20rem;
+          font-size: 0.85rem;
+        "
+      >
+#include <Arduino.h>
+#include <ModbusRTUSlave.h>
 
-<script type="module">
-import { ModbusRTU } from "https://unpkg.com/modbus-webserial@latest/dist/index.js";
+constexpr uint8_t  SLAVE_ID = 1;
+constexpr uint32_t BAUD     = 9600;
 
-// ----------------------------------------------------------------
-// Helpers and globals
-// ----------------------------------------------------------------
-const TOTAL = 64;
-const $  = id => document.getElementById(id);
-const btnC=$('btnConnect'),btnS=$('btnStart'),btnP=$('btnStop');
-const status=$('status'),elapsed=$('elapsed'),errors=$('errors');
-const cnt=[ $('cnt1'), $('cnt2'), $('cnt3'), $('cnt4') ];
+uint16_t holdingRegs[64];
+uint16_t inputRegs[64];
+bool coils[64];
+bool discretes[64];
 
-let cli=null, timer=null, sec=0, running=false;
+ModbusRTUSlave mb(Serial);
 
-const delayInput   = document.getElementById('delay');
-const intervalSpan = document.getElementById('interval');
+void setup() {
+  Serial.begin(BAUD);
 
+  unsigned long t0 = millis();
+  while (!Serial && millis() - t0 < 2000) {}
 
-// show initial value
-intervalSpan.textContent = (delayInput.value / 1000).toFixed(1) + ' s';
+  delay(100);   // helps USB CDC settle
 
-// update display when user edits
-delayInput.oninput = () => {
-  const ms = Math.max(0, parseInt(delayInput.value, 10) || 0);
-  intervalSpan.textContent = (ms / 1000).toFixed(1) + ' s';
-};
+  mb.begin(SLAVE_ID, BAUD);
 
-const setStatus=(t,ok=true)=>{status.textContent=t;status.style.color=ok?'green':'crimson'};
-function logErr(tag,msg){
-  errors.hidden=false;
-  const time=new Date().toLocaleTimeString();
-  errors.innerHTML=`[${time}] <b>${tag}</b> ${msg}<br>`+errors.innerHTML;
-  // cap to 100 lines
-  const lines=errors.innerHTML.split('<br>');
-  if(lines.length>100) errors.innerHTML=lines.slice(0,100).join('<br>');
+  mb.configureHoldingRegisters(holdingRegs, 64);
+  mb.configureInputRegisters(inputRegs, 64);
+  mb.configureCoils(coils, 64);
+  mb.configureDiscreteInputs(discretes, 64);
 }
 
-// ----------------------------------------------------------------
-// Connect to WebSerial
-// ----------------------------------------------------------------
-btnC.onclick=async()=>{
-  try{
-    cli=await ModbusRTU.openWebSerial({ baudRate:9600 });
-    cli.setID(1);
-    setStatus('Connected');
-    btnS.disabled=false;
-    btnC.disabled=true;
-  }catch(e){ setStatus(e.message,false); }
-};
-
-// ----------------------------------------------------------------
-// Start / Stop
-// ----------------------------------------------------------------
-btnS.onclick=()=>{
-  btnS.disabled=true; btnP.disabled=false;
-  errors.innerHTML=''; errors.hidden=true;
-  cnt.forEach(c=>c.textContent='0');
-  sec=0; elapsed.textContent='0 s';
-  timer=setInterval(()=>elapsed.textContent=`${++sec} s`,1000);
-  running=true; runLoop();
-};
-btnP.onclick=()=>{
-  running=false; clearInterval(timer);
-  btnS.disabled=false; btnP.disabled=true;
-  setStatus('Stopped',true);
-};
-
-// ----------------------------------------------------------------
-// Serial loop
-// ----------------------------------------------------------------
-async function runLoop(){
-  while(running){
-    await runOnce().catch(console.error);
-    const ms = Math.max(0, parseInt(delayInput.value, 10) || 0);
-    await new Promise(r => setTimeout(r, ms));
-  }
+void loop() {
+  mb.poll();
 }
+  </pre
+      >
+    </details>
 
-// ----------------------------------------------------------------
-// Single iteration
-// ----------------------------------------------------------------
-async function runOnce(){
-  let step='?';
-  try{
-    // 1. Holding registers
-    const vals=[...Array(TOTAL).keys()];
-    step='1-a'; await cli.writeRegisters(0,vals);              // FC 16
-    step='1-b'; if(!(await cli.readHoldingRegisters(0,TOTAL)).data.every((v,i)=>v===i))
-                  throw new Error('bulk mismatch');
-    step='1-c'; for(let i=TOTAL-1;i>=0;i--) await cli.writeRegister(i,vals[i]); // FC 06
-    step='1-d'; for(let blk=0;blk<TOTAL/8;blk++){
-                  const {data}=await cli.readHoldingRegisters(blk*8,8);
-                  for(let j=0;j<8;j++) if(data[j]!==blk*8+j) throw new Error(`chunk ${blk}`);
-                }
-    cnt[0].textContent=+cnt[0].textContent+1;
-
-    // 2. Input registers
-    step='2-a'; const IRa=(await cli.readInputRegisters(0,TOTAL)).data;
-    step='2-b'; const IRb=[]; for(let blk=0;blk<TOTAL/8;blk++)
-                  IRb.push(...(await cli.readInputRegisters(blk*8,8)).data);
-    step='2-c'; const IRc=[]; for(let i=0;i<TOTAL;i++)
-                  IRc.push(...(await cli.readInputRegisters(i,1)).data);
-    if(JSON.stringify(IRa)!==JSON.stringify(IRb)||JSON.stringify(IRa)!==JSON.stringify(IRc))
-      throw new Error('IR mismatch');
-    cnt[1].textContent=+cnt[1].textContent+1;
-
-    // 3. Coils
-    const pat=Array.from({length:TOTAL},(_,i)=>!(i&1));
-    step='3-a'; await cli.writeCoils(0,pat);                   // FC 0F
-    step='3-b'; if(JSON.stringify((await cli.readCoils(0,TOTAL)).data)!==JSON.stringify(pat))
-                  throw new Error('coil bulk mismatch');
-    step='3-c'; for(let i=0;i<TOTAL;i++) await cli.writeCoil(i,!pat[i]); // FC 05
-    step='3-d'; const chk=[]; for(let blk=0;blk<TOTAL/8;blk++)
-                  chk.push(...(await cli.readCoils(blk*8,8)).data);
-    if(!chk.every((v,i)=>v===!pat[i])) throw new Error('coil chunk mismatch');
-    cnt[2].textContent=+cnt[2].textContent+1;
-
-    // 4. Discrete inputs
-    step='4-a'; const D0=(await cli.readDiscreteInputs(0,TOTAL)).data;
-    step='4-b'; const D1=[]; for(let blk=0;blk<TOTAL/8;blk++)
-                  D1.push(...(await cli.readDiscreteInputs(blk*8,8)).data);
-    step='4-c'; const D2=[]; for(let i=0;i<TOTAL;i++)
-                  D2.push(...(await cli.readDiscreteInputs(i,1)).data);
-    if(JSON.stringify(D0)!==JSON.stringify(D1)||JSON.stringify(D0)!==JSON.stringify(D2))
-      throw new Error('DI mismatch');
-    cnt[3].textContent=+cnt[3].textContent+1;
-
-  }catch(e){ logErr(step,e.message); }
-}
-</script>
-</body>
+    <footer
+      id="build-info"
+      style="
+        margin-top: 3rem;
+        padding-top: 1rem;
+        border-top: 1px solid #ddd;
+        font-size: 0.9em;
+        color: #555;
+      "
+      class="mono"
+    ></footer>
+  </body>
 </html>

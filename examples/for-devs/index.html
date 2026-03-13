@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <title>modbus-webserial / Browser testing</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 2rem;
+      max-width: 900px;
+      line-height: 1.5;
+    }
+
+    pre {
+      background: #f6f6f6;
+      padding: 0.75rem;
+      overflow-x: auto;
+    }
+
+    code {
+      font-family: ui-monospace, monospace;
+    }
+
+    h1, h2, h3 {
+      margin-top: 2rem;
+    }
+
+    a {
+      text-decoration: none;
+    }
+  </style>
+</head>
+
+<body>
+
+<h1>modbus-webserial / for-devs</h1>
+
+<p>
+The project has a fairly extensive automated test suite using <code>vitest</code>.
+However, browser testing is still required because the runtime environment is
+fundamentally different. In particular, the library interacts with browser APIs
+such as <code>WebSerial</code>, which cannot be fully simulated in the Node test
+environment.
+</p>
+
+<p>
+For this reason, a set of simple browser examples is provided in the
+<code>examples/</code> directory. These can be used to test the library directly
+against real hardware in a real browser environment.
+</p>
+
+<hr>
+
+<h2>How examples load the library</h2>
+
+<p>
+All example pages load <code>modbus-webserial</code> dynamically via an
+import map that can be overridden through a query parameter.
+</p>
+
+<pre><code id="import-example"></code></pre>
+
+<script>
+const importCode = `
+<!-- Load library -->
+<script>
+/**
+ * Allow importing modbus-webserial from a custom URL
+ */
+const params = new URLSearchParams(location.search);
+const src =
+  params.get("src") ?? "https://unpkg.com/modbus-webserial/dist/index.js";
+
+const map = {
+  imports: {
+    "modbus-webserial": src,
+  },
+};
+
+const el = document.createElement("script");
+el.type = "importmap";
+el.textContent = JSON.stringify(map);
+
+document.currentScript.after(el);
+
+console.log("loading modbus-webserial from:", src);
+<\/script>
+
+<!-- Use library -->
+<script type="module">
+import { ModbusRTU, BUILD_INFO } from "modbus-webserial";
+
+if (BUILD_INFO) {
+  console.log("modbus-webserial build info:", BUILD_INFO);
+}
+<\/script>
+`;
+
+document.getElementById("import-example").innerText = importCode;
+</script>
+
+<p>
+Because of this mechanism, the library source can be changed simply by adding
+a query parameter:
+</p>
+
+<pre><code>?src=&lt;url&gt;</code></pre>
+
+<p>Example:</p>
+
+<pre><code>http://localhost:3000/simple-test/?src=https://unpkg.com/modbus-webserial@latest/dist/index.js</code></pre>
+
+<hr>
+
+<h2>Testing local builds</h2>
+
+<p>
+For development, a small test server is included which serves the example pages
+and the locally built library.
+</p>
+
+<pre><code>node scripts/dev-server.mjs 3000</code></pre>
+
+<p>This will:</p>
+
+<ul>
+<li>Serve <code>examples/</code> at <code>http://localhost:3000</code></li>
+<li>Expose the build output at <code>http://localhost:3000/dist</code></li>
+<li>Automatically reload the browser when files change</li>
+</ul>
+
+<hr>
+
+<h3>Loading the local build</h3>
+
+<p>
+The server supports a convenience parameter <code>?local</code> which redirects
+the page to load the locally built library.
+</p>
+
+<p>Example:</p>
+
+<pre><code>http://localhost:3000/simple-test/?local</code></pre>
+
+<p>which resolves to:</p>
+
+<pre><code>http://localhost:3000/simple-test/?src=http://localhost:3000/dist/index.js</code></pre>
+
+<p>
+This allows testing local changes against the example pages without modifying
+any example files.
+</p>
+
+</body>
+</html>

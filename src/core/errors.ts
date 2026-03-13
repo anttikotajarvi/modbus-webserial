@@ -35,6 +35,10 @@ export class TimeoutError extends Error {
   constructor() { super('Modbus response timed out'); }
 }
 
+export class StreamClosedError extends Error {
+  constructor() { super('Modbus stream closed'); }
+}
+
 export class ExceptionError extends Error {
   code: number;
   constructor(code: number) {

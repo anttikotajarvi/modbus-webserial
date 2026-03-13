@@ -1,7 +1,7 @@
 {
   "name": "modbus-webserial",
-  "version": "0.10.3",
-  "description": "Tiny TypeScript library for speaking Modbus-RTU from the browser via Web Serial",
+  "version": "0.11.1",
+  "description": "ESM library for speaking Modbus-RTU from the browser via Web Serial",
   "type": "module",
   "author": "Antti Kotajärvi <antti.kotajarvi@hotmail.com>",
   "license": "MIT",

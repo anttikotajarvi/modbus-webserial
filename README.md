@@ -135,7 +135,53 @@ const client = await ModbusRTU.openWebSerial({
 });
 ```
 
+### Concurrency
+The WebSerial transport is **single-flight**: it can only have one in-progress Modbus RTU transaction at a time.
+
+This is intentional. Modbus RTU does not include a transaction identifier, so overlapping requests on the same serial link makes it ambiguous which response belongs to which request.
+
+There is **no internal request queue**. To avoid abstracting away the serial “one request at a time” nature of Modbus RTU, starting a new transaction while another is in progress will throw an error immediately.
+
+#### Wrong (concurrent calls on the same client/transport):
+```js
+// Two requests started without awaiting the first one.
+// This will throw (single-flight).
+const p1 = client.readHoldingRegisters(0x0000, 2);
+const p2 = client.readHoldingRegisters(0x0010, 2); 
+// -> Uncaught Error: Concurrent transact() calls are not supported
+
+await Promise.all([p1, p2]);
+```
+
+#### Right (serialize with `await`):
+```js
+await client.readHoldingRegisters(0x0000, 2);
+await client.readHoldingRegisters(0x0010, 2);
+```
+
+### Post-timeout recovery
+
+When a request times out, a Modbus RTU slave may still send a **late reply** afterwards. If you immediately send a new request (that is similar enough to the old one), that late reply can be mistaken as the response for the new request.
+
+To reduce that risk (along with strong request/response matching), the transport supports a post-timeout “quarantine” window.
+
+* If `postTimeoutWaitPeriod` is `0` (default), the next request is sent immediately after a timeout.
+* If `postTimeoutWaitPeriod` is `> 0`, the next `transact()` call will **delay sending** the request for the specified period, while **discarding** any bytes received during that window.
+
+```js
+const client = await ModbusRTU.openWebSerial({
+  // ...
+  postTimeoutWaitPeriod: 20, // ms
+});
+```
+
+Notes:
+* This affects **only the request after a timeout**.
+* When you use the client sequentially (with `await`), this shows up as a small delay before the next request. It does **not** change how timeouts are thrown or how you catch them.
+
+
 ## Current state
+* **v0.11**: Transport rework to handle edge cases explicitly
 * **v0.10**: Full modbus data-access coverage
 * **v0.9**: Full passing tests, smoke test passed, complete README, build scripts in place
 * **Beta**: Full Modbus RTU function‑code coverage
