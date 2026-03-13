@@ -181,6 +181,7 @@ Notes:
 
 
 ## Current state
+* **v0.11**: Transport rework to handle edge cases explicitly
 * **v0.10**: Full modbus data-access coverage
 * **v0.9**: Full passing tests, smoke test passed, complete README, build scripts in place
 * **Beta**: Full Modbus RTU function‑code coverage
