@@ -67,18 +67,36 @@ function fakeTransport(steps: ReadStep[], opts: FakeTransportOpts = {}) {
   const t = Object.create(WebSerialTransport.prototype) as any;
 
   // ---- important: initialize fields that class initializers would set ----
-  t.postTimeoutWaitPeriod = opts.postTimeoutWaitPeriod ?? 0;
+
+  // Rolling receive buffer and transaction state
+  t.rxBuf = new Uint8Array(0);
   t.dirtyUntil = 0;
   t.inFlight = false;
-  t.interRequestDelay = opts.interRequestDelay ?? 0;
+  t.lastTransactionEnd = null;
 
-  // existing fields you already set
-  t.timeout = opts.timeout ?? 50;
-  t.rxBuf = new Uint8Array(0);
-  if (opts.strictCrc !== undefined) t.strictCrc = opts.strictCrc;
-  if (opts.maxResyncDrops !== undefined) t.maxResyncDrops = opts.maxResyncDrops;
+  // Transport config now lives under `cfg`
+  t.cfg = {
+    baudRate: 9600,
+    dataBits: 8,
+    stopBits: 1,
+    parity: "none",
+    timeout: opts.timeout ?? 50,
+    postTimeoutWaitPeriod: opts.postTimeoutWaitPeriod ?? 0,
+    interRequestDelay: opts.interRequestDelay ?? 0,
+  };
 
-  t.writer = { write: async () => {} };
+  // CRC behavior now lives in dedicated internal flags
+  t.CRC_STRICT = opts.strictCrc ?? true;
+  t.MAX_RESYNC_DROPS = opts.maxResyncDrops ?? 32;
+
+  // Default clock for tests; individual tests can still override timers
+  t.now = () => Date.now();
+
+  // Minimal writer mock used by transact()
+  t.writer = {
+    write: async () => {},
+    close: async () => {},
+  };
 
   const normalized = steps.map((s) =>
     s instanceof Uint8Array ? { type: "chunk", value: s } : s,
@@ -116,6 +134,7 @@ function fakeTransport(steps: ReadStep[], opts: FakeTransportOpts = {}) {
     readable: {
       getReader: () => makeReader(),
     },
+    close: async () => {},
   };
 
   t.reader = t.port.readable.getReader();

@@ -1,4 +1,9 @@
-import { TimeoutError, CrcError, ResyncError, StreamClosedError } from "../core/errors.js";
+import {
+  TimeoutError,
+  CrcError,
+  ResyncError,
+  StreamClosedError,
+} from "../core/errors.js";
 import { crc16 } from "../core/crc16.js";
 import {
   FC_MASK_WRITE_REGISTER,
@@ -19,17 +24,19 @@ import {
 // ----------------------------------------------------------------
 //  User-visible options
 // ----------------------------------------------------------------
-export interface WebSerialOptions {
+export interface WebSerialOptions extends WebSerialConfig {
+  requestFilters?: SerialPortFilter[];
+  port?: SerialPort;
+}
+export interface WebSerialConfig {
   baudRate?: number;
   dataBits?: 7 | 8;
   stopBits?: 1 | 2;
   parity?: "none" | "even" | "odd";
-  requestFilters?: SerialPortFilter[];
-  port?: SerialPort;
-  timeout?: number; // ms,
-  crcPolicy?: CrcPolicy;
-  postTimeoutWaitPeriod?: number; // ms
-  interRequestDelay?: number; // ms
+  timeout?: number;
+  crcPolicy?: Required<CrcPolicy>;
+  postTimeoutWaitPeriod?: number;
+  interRequestDelay?: number;
 }
 
 /* CRC policy for resyncing versus throwing on bad frames */
@@ -44,6 +51,17 @@ type CrcPolicy =
 const DEFAULT_CRC_POLICY: CrcPolicy = { mode: "strict" };
 const DEFAULT_MAX_RESYNC_DROPS = 32;
 
+export const DEFAULTS: Required<WebSerialConfig> = {
+  baudRate: 9600,
+  dataBits: 8,
+  stopBits: 1,
+  parity: "none",
+  timeout: 500,
+  crcPolicy: DEFAULT_CRC_POLICY,
+  postTimeoutWaitPeriod: 0,
+  interRequestDelay: 0,
+};
+
 // ----------------------------------------------------------------
 // WebSerialTransport
 // ----------------------------------------------------------------
@@ -52,26 +70,30 @@ export class WebSerialTransport {
   private reader!: ReadableStreamDefaultReader<Uint8Array>;
   private writer!: WritableStreamDefaultWriter<Uint8Array>;
 
-  private timeout = 500;
   private rxBuf = new Uint8Array(0); // rolling buffer across calls
 
-  private strictCrc = true;
-  private maxResyncDrops = DEFAULT_MAX_RESYNC_DROPS;
-
-  private postTimeoutWaitPeriod = 0;
   private dirtyUntil = 0;
   private inFlight = false;
+  private lastTransactionEnd: number | null = null;
 
-  private interRequestDelay = 0;
-
-  private lastTransactionEnd = 0;
+  private cfg: Required<Omit<WebSerialConfig, "crcPolicy">> = {
+    baudRate: DEFAULTS.baudRate,
+    dataBits: DEFAULTS.dataBits,
+    stopBits: DEFAULTS.stopBits,
+    parity: DEFAULTS.parity,
+    timeout: DEFAULTS.timeout,
+    postTimeoutWaitPeriod: DEFAULTS.postTimeoutWaitPeriod,
+    interRequestDelay: DEFAULTS.interRequestDelay,
+  };
+  private MAX_RESYNC_DROPS = DEFAULT_MAX_RESYNC_DROPS;
+  private CRC_STRICT = DEFAULT_CRC_POLICY.mode === "strict";
 
   // timeout gelpers
   setTimeout(ms: number) {
-    this.timeout = ms;
+    this.cfg.timeout = ms;
   }
   getTimeout() {
-    return this.timeout;
+    return this.cfg.timeout;
   }
   getPort() {
     return this.port;
@@ -87,36 +109,34 @@ export class WebSerialTransport {
   }
 
   private async init(opts: WebSerialOptions) {
-    this.timeout = opts.timeout ?? 500;
+    // Override cfg
+    Object.entries(this.cfg).forEach(([key, defaultValue]) => {
+      if (typeof opts[key as keyof WebSerialConfig] !== "undefined") {
+        (this.cfg as any)[key] = opts[key as keyof WebSerialConfig]!;
+      }
+    });
+    if (opts.crcPolicy) {
+      this.CRC_STRICT = opts.crcPolicy.mode === "strict";
+      this.MAX_RESYNC_DROPS =
+        opts.crcPolicy.mode === "resync"
+          ? (opts.crcPolicy.maxResyncDrops ?? DEFAULT_MAX_RESYNC_DROPS)
+          : 0;
+    }
+
     this.port =
       opts.port ??
       (await navigator.serial.requestPort({
         filters: opts.requestFilters ?? [],
       }));
+
     await this.port.open({
-      baudRate: opts.baudRate ?? 9600,
-      dataBits: opts.dataBits ?? 8,
-      stopBits: opts.stopBits ?? 1,
-      parity: opts.parity ?? "none",
+      baudRate: this.cfg.baudRate,
+      dataBits: this.cfg.dataBits,
+      stopBits: this.cfg.stopBits,
+      parity: this.cfg.parity,
     });
     this.reader = this.port.readable!.getReader();
     this.writer = this.port.writable!.getWriter();
-
-    // CRC policy defaults
-    const policy = opts.crcPolicy ?? DEFAULT_CRC_POLICY;
-
-    if (policy.mode === "strict") {
-      this.strictCrc = true;
-      this.maxResyncDrops = 0; // irrelevant in strict mode
-    } else {
-      this.strictCrc = false;
-      this.maxResyncDrops = policy.maxResyncDrops ?? DEFAULT_MAX_RESYNC_DROPS;
-    }
-
-    // Timeout settings
-    this.postTimeoutWaitPeriod = opts.postTimeoutWaitPeriod ?? 0;
-
-    this.interRequestDelay = opts.interRequestDelay ?? 0;
 
     // Prefer 'performance.now()' over 'Date.now()'
     // For some reason just defining a singleton for now
@@ -136,21 +156,19 @@ export class WebSerialTransport {
 
     this.inFlight = true;
     try {
+      // inter request delay only if there is a previous transaction
+      if (this.cfg.interRequestDelay > 0 && this.lastTransactionEnd !== null) {
+        const wait =
+          this.lastTransactionEnd + this.cfg.interRequestDelay - this.now();
 
-      // Inter-request delay
-      if (this.interRequestDelay > 0) {
-        const wait = this.lastTransactionEnd + this.interRequestDelay - this.now();
         if (wait > 0) await sleep(wait);
       }
 
       await this.waitOutDirtyPeriod();
       await this.writer.write(req);
 
-      const STRICT_CRC = this.strictCrc;
-      const MAX_RESYNC_DROPS = this.maxResyncDrops; // interpreted as max discarded bytes
-
-      const deadline = this.now() + this.timeout;
-
+      const deadline = this.now() + this.cfg.timeout;
+ 
       enum State {
         TRY_EXTRACT,
         HAVE_FRAME,
@@ -189,14 +207,14 @@ export class WebSerialTransport {
             // [[fallthrough]]
           }
           case State.BAD_CRC: {
-            if (STRICT_CRC) throw new CrcError();
+            if (this.CRC_STRICT) throw new CrcError();
 
             // Discarded a whole candidate frame (already popped from rxBuf).
             discardedBytes += frame ? frame.length : 0;
             frame = null;
 
-            if (discardedBytes >= MAX_RESYNC_DROPS) {
-              throw new ResyncError(discardedBytes, MAX_RESYNC_DROPS);
+            if (discardedBytes >= this.MAX_RESYNC_DROPS) {
+              throw new ResyncError(discardedBytes, this.MAX_RESYNC_DROPS);
             }
 
             // IMPORTANT: do NOT drop 1 byte from rxBuf here.
@@ -254,7 +272,8 @@ export class WebSerialTransport {
         }),
       ]);
 
-      if (result === WebSerialTransport.TIMEOUT) return { kind: "timeout" } as const;
+      if (result === WebSerialTransport.TIMEOUT)
+        return { kind: "timeout" } as const;
       if (result.done || !result.value) return { kind: "closed" } as const;
       return { kind: "chunk", value: result.value } as const;
     } finally {
@@ -285,7 +304,7 @@ export class WebSerialTransport {
     if (r.kind === "timeout") {
       await this.resetReaderAfterTimeout();
       this.rxBuf = new Uint8Array(0);
-      this.dirtyUntil = this.now() + this.postTimeoutWaitPeriod;
+      this.dirtyUntil = this.now() + this.cfg.postTimeoutWaitPeriod;
       throw new TimeoutError();
     }
 
