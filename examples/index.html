@@ -1,33 +1,66 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<title>modbus-webserial / Examples</title>
-<style>
-  body { font-family: system-ui, sans-serif; margin: 2rem; }
-  ul   { line-height: 1.6; }
-  a    { text-decoration: none; }
-</style>
-</head>
-<body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>modbus-webserial / Examples</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        line-height: 1.55;
+      }
+      main {
+        max-width: 55rem;
+      }
+      ul {
+        line-height: 1.7;
+      }
+      a {
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      code {
+        background: #eee;
+        padding: 0.1rem 0.25rem;
+        border-radius: 0.25rem;
+      }
+      hr {
+        border: 0;
+        border-top: 1px solid #ddd;
+        margin: 1.25rem 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>modbus-webserial / Examples</h1>
 
-<h1>modbus-webserial / Examples</h1>
+      <ul>
+        <li>
+          <a href="basic-demo">Basic Demo</a> — Connect via Web Serial and
+          read/write holding registers 0–1.
+        </li>
+        <li>
+          <a href="smoke-test">Smoke Test</a> — Exercise multiple function codes
+          across 64 words/bits and verify responses.
+        </li>
+      </ul>
 
-<ul>
-  <li>
-    <a href="basic-demo/index.html">Basic Demo</a> – Connect via Web Serial and
-    read/write holding registers 0–1.
-  </li>
-  <li>
-    <a href="smoke-test/index.html">Smoke Test</a> – Exercise multiple function
-    codes across 64 words/bits and verify responses.
-  </li>
-</ul>
+      <hr />
 
-<p>
-  These examples load the library from <code>unpkg.com</code> and require a
-  browser with Web Serial support.
-</p>
+      <h2>For developers</h2>
+      <p>
+        <a href="for-devs">For Devs</a> — Instructions for live browser testing
+        and hosting a local library build.
+      </p>
 
-</body>
+      <p>
+        These examples load the library from <code>unpkg.com</code> and require a
+        browser with Web Serial support.
+      </p>
+    </main>
+  </body>
 </html>
