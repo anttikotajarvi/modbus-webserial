@@ -861,12 +861,12 @@
 #include &lt;Arduino.h&gt;
 
 // Some AVR cores don't define HAVE_CDCSERIAL even though USBCON exists.
-// This makes ModbusRTUSlave(Serial_&amp;) available on ATmega32u4 (Leonardo/Micro/Pro Micro).
-#if defined(USBCON) &amp;&amp; !defined(HAVE_CDCSERIAL)
+// This makes ModbusRTUSlave(Serial_&) available on ATmega32u4 (Leonardo/Micro/Pro Micro).
+#if defined(USBCON) && !defined(HAVE_CDCSERIAL)
   #define HAVE_CDCSERIAL
 #endif
 
-#include &lt;ModbusRTUSlave.h&gt;
+#include <ModbusRTUSlave.h>
 
 constexpr uint8_t  SLAVE_ID = 1;
 constexpr uint32_t BAUD     = 9600;
@@ -878,14 +878,14 @@ bool     coils      [64];
 bool     discretes  [64];
 
 // Force USB-CDC serial (Serial_) on 32u4
-ModbusRTUSlave mb((Serial_&amp;)Serial);
+ModbusRTUSlave mb(Serial);
 
 void setup() {
   Serial.begin(BAUD);
 
   // Don't block forever; browser opens the port when ready
   unsigned long t0 = millis();
-  while (!Serial &amp;&amp; (millis() - t0) &lt; 2000) {}
+  while (!Serial && (millis() - t0) < 2000) {}
 
   mb.configureHoldingRegisters(holdingRegs,  64);
   mb.configureInputRegisters  (inputRegs,    64);
