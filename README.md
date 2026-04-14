@@ -107,8 +107,7 @@ Utility and configuration methods exposed on `ModbusRTU`:
 
 ---
 
-## Examples
-
+## [Examples](https://anttikotajarvi.github.io/modbus-webserial/examples/)
 The following demos are fully self‑contained HTML files, served via GitHub Pages:
 
 * [Basic Read/Write Demo](https://anttikotajarvi.github.io/modbus-webserial/examples/basic-demo/)
