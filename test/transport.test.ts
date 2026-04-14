@@ -361,6 +361,8 @@ describe("WebSerialTransport frame assembly", () => {
   });
 
   it("rejects concurrent transact() calls", async () => {
+    vi.useFakeTimers();
+
     const tr = fakeTransport([{ type: "pending" }], { timeout: 100 });
     const req = Uint8Array.from([1, 0x03]);
 
