@@ -40,7 +40,7 @@ export interface WebSerialConfig {
 }
 
 /* CRC policy for resyncing versus throwing on bad frames */
-type CrcPolicy =
+export type CrcPolicy =
   | {
       mode: "strict";
     }

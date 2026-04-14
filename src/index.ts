@@ -9,7 +9,8 @@ export type {
   WriteFileResult,
   ReadFifoResult
 } from './core/types.js';
-export type { WebSerialOptions } from './transport/webserial.js';
+export type { WebSerialOptions, WebSerialConfig, CrcPolicy } from './transport/webserial.js';
+export { DEFAULTS as defaultConfig } from './transport/webserial.js';
 
 declare const __VERSION__: string
 declare const __GIT_HASH__: string
